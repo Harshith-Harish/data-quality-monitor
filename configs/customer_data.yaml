@@ -1,0 +1,16 @@
+data_source: "customer_data"
+description: "Customer records from CRM system"
+primary_key: "customer_id"
+context_columns: ["customer_id", "customer_name", "email", "age", "status"]
+
+checks:
+  enabled: []
+  disabled: []
+
+ranges:
+  age: [0, 120]
+  credit_score: [300, 850]
+
+thresholds:
+  max_missing_pct: 5.0
+  max_duplicate_pct: 1.0

@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+db/quality_results.db
+uploads/
+flagged_records/
+reports/
+powerbi_export/
+.env
+*.pbix

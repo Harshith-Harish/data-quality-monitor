@@ -1,0 +1,45 @@
+# Data source name (shows in reports and database)
+data_source: "hr_system"
+description: "Employee records from HR system"
+
+# Primary key and context columns
+primary_key: "employee_id"
+context_columns: ["employee_id", "full_name", "department", "email", "age"]
+
+# Which checks to run / skip
+
+checks:
+  enabled: []          # empty = run ALL checks
+  disabled: []         # list check names here to skip them
+  # Example: run only 3 checks
+  # enabled:
+  #   - missing_values
+  #   - duplicate_ids
+  #   - range_validation
+  # Example: run all except statistics
+  # disabled:
+  #   - statistics
+  #   - data_types
+
+# Custom value ranges (overrides defaults)
+
+ranges:
+  age: [0, 120]
+  salary: [0, 300000]
+  rating: [0, 5]
+  # format: column_keyword: [min, max]
+  # use null for no limit: price: [0, null]
+
+# Thresholds for alerting (future use)
+
+thresholds:
+  max_missing_pct: 5.0
+  max_duplicate_pct: 1.0
+
+# Custom scorer weights (optional, defaults shown)
+# weights:
+#   completeness: 0.30
+#   uniqueness: 0.20
+#   id_uniqueness: 0.20
+#   validity: 0.20
+#   consistency: 0.10

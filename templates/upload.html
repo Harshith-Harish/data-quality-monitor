@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Quality Monitor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">DQ</div>
+                <div>
+                    <h1>Data Quality Monitor</h1>
+                    <p class="subtitle">Upload any dataset. Get actionable quality insights.</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Upload Form -->
+        <form action="/check" method="POST" enctype="multipart/form-data" class="upload-form">
+
+            <!-- File Upload -->
+            <div class="card">
+                <h2>1. Upload Data File</h2>
+                <p class="hint">Supported formats: CSV, Excel (.xlsx/.xls), JSON</p>
+                <div class="file-drop" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                    <div class="drop-icon">📁</div>
+                    <p id="dropText">Drag & drop your file here or click to browse</p>
+                    <input type="file" name="file" id="fileInput" accept=".csv,.xlsx,.xls,.json" required hidden
+                           onchange="updateFileName(this)">
+                </div>
+            </div>
+
+            <!-- Config Selection -->
+            <div class="card">
+                <h2>2. Configuration <span class="optional">(optional)</span></h2>
+                <p class="hint">Set custom validation rules, primary key, and ranges</p>
+
+                <div class="config-options">
+                    <!-- Option A: Select existing config -->
+                    <div class="config-option">
+                        <label for="configSelect">Select existing config:</label>
+                        <select name="config_select" id="configSelect">
+                            <option value="default">Use defaults (auto-detect everything)</option>
+                            {% for config in configs %}
+                            <option value="{{ config }}">{{ config.replace('.yaml','').replace('_',' ').title() }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="config-divider">- or -</div>
+
+                    <!-- Option B: Upload custom config -->
+                    <div class="config-option">
+                        <label for="configFile">Upload your own YAML config:</label>
+                        <input type="file" name="config_file" id="configFile" accept=".yaml,.yml" class="config-upload">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Check Selection -->
+            <div class="card">
+                <h2>3. Select Checks <span class="optional">(optional - all run by default)</span></h2>
+                <div class="checks-grid">
+                    {% for check in checks %}
+                    <label class="check-item severity-{{ check.severity }}">
+                        <input type="checkbox" name="checks" value="{{ check.name }}">
+                        <div class="check-info">
+                            <span class="check-name">{{ check.name.replace('_', ' ').title() }}</span>
+                            <span class="check-badge {{ check.severity }}">{{ check.severity }}</span>
+                            <span class="check-desc">{{ check.description }}</span>
+                        </div>
+                    </label>
+                    {% endfor %}
+                </div>
+                <p class="hint" style="margin-top: 12px;">Leave all unchecked to run all 10 checks.</p>
+            </div>
+
+            <!-- Submit -->
+            <button type="submit" class="btn-run" id="runBtn">
+                Run Quality Check
+            </button>
+        </form>
+    </div>
+
+    <script>
+        // drag and drop handling
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            fileInput.files = e.dataTransfer.files;
+            updateFileName(fileInput);
+        });
+
+        function updateFileName(input) {
+            const text = document.getElementById('dropText');
+            if (input.files.length > 0) {
+                const file = input.files[0];
+                const size = (file.size / 1024).toFixed(1);
+                text.innerHTML = `<strong>${file.name}</strong> (${size} KB)`;
+                dropZone.classList.add('file-selected');
+            }
+        }
+
+        // form submit loading state
+        document.querySelector('.upload-form').addEventListener('submit', function() {
+            const btn = document.getElementById('runBtn');
+            btn.textContent = 'Running checks...';
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+        });
+    </script>
+</body>
+</html>

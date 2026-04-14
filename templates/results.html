@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Results - Data Quality Monitor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">DQ</div>
+                <div>
+                    <h1>Quality Report</h1>
+                    <p class="subtitle">{{ report.file_name }} - {{ report.timestamp[:19] }}</p>
+                </div>
+            </div>
+            <a href="/" class="btn-back">New Check</a>
+        </header>
+
+        <!-- KPI Cards Row -->
+        <div class="kpi-row">
+            <div class="kpi-card">
+                <div class="kpi-value grade-{{ report.kpi.grade[0] }}">{{ report.kpi.grade }}</div>
+                <div class="kpi-label">Grade</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">{{ report.kpi.overall_score }}%</div>
+                <div class="kpi-label">Overall Score</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">{{ report.rows | string }}</div>
+                <div class="kpi-label">Rows Analyzed</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">{{ report.columns }}</div>
+                <div class="kpi-label">Columns</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">{{ report.kpi.total_issues }}</div>
+                <div class="kpi-label">Issues Found</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value">{{ report.flagged_records | length }}</div>
+                <div class="kpi-label">Flagged Records</div>
+            </div>
+        </div>
+
+        <!-- Score Gauge + Dimensions -->
+        <div class="two-col">
+            <!-- Gauge -->
+            <div class="card gauge-card">
+                <h3>Overall Quality Score</h3>
+                <div class="gauge-container">
+                    <svg viewBox="0 0 200 120" class="gauge-svg">
+                        <!-- background arc -->
+                        <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#e8ecf0" stroke-width="16" stroke-linecap="round"/>
+                        <!-- score arc -->
+                        {% set score = report.kpi.overall_score %}
+                        {% set angle = score / 100 * 180 %}
+                        <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none"
+                              stroke="{% if score >= 95 %}#22c55e{% elif score >= 85 %}#3b82f6{% elif score >= 75 %}#f59e0b{% else %}#ef4444{% endif %}"
+                              stroke-width="16" stroke-linecap="round"
+                              stroke-dasharray="{{ angle * 2.79 }} 999"/>
+                        <!-- score text -->
+                        <text x="100" y="90" text-anchor="middle" class="gauge-text">{{ score }}%</text>
+                        <text x="100" y="108" text-anchor="middle" class="gauge-label">{{ report.kpi.grade }}</text>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Dimension Scores -->
+            <div class="card">
+                <h3>Quality Dimensions</h3>
+                <div class="dimensions">
+                    {% for dim, score in report.kpi.dimensions.items() %}
+                    <div class="dim-row">
+                        <span class="dim-name">{{ dim.replace('_', ' ').title() }}</span>
+                        <div class="dim-bar-bg">
+                            <div class="dim-bar" style="width: {{ score }}%; background: {% if score >= 95 %}#22c55e{% elif score >= 85 %}#3b82f6{% elif score >= 75 %}#f59e0b{% else %}#ef4444{% endif %};"></div>
+                        </div>
+                        <span class="dim-score">{{ score }}%</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Preview -->
+        <div class="card">
+            <h3>Data Preview</h3>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            {% if report.preview and report.preview | length > 0 %}
+                            {% for key in report.preview[0].keys() %}
+                            <th>{{ key }}</th>
+                            {% endfor %}
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in report.preview[:5] %}
+                        <tr>
+                            {% for val in row.values() %}
+                            <td class="{% if val == '(null)' %}null-val{% endif %}">{{ val }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <p class="hint">Primary Key: <strong>{{ report.primary_key or 'None (using row index)' }}</strong> | Run ID: {{ report.run_id }} | Execution: {{ report.execution_time_sec }}s</p>
+        </div>
+
+        <!-- Check Results -->
+        <div class="card">
+            <h3>Check Results</h3>
+            <div class="check-results">
+                {% for r in report.results %}
+                <div class="result-card {% if r.passed %}result-pass{% else %}result-fail{% endif %}" onclick="toggleDetails(this)">
+                    <div class="result-header">
+                        <div class="result-status">
+                            <span class="status-dot {% if r.passed %}dot-pass{% else %}dot-fail{% endif %}"></span>
+                            <span class="result-name">{{ r.check_name.replace('_', ' ').title() }}</span>
+                        </div>
+                        <div class="result-meta">
+                            <span class="check-badge {{ r.severity }}">{{ r.severity }}</span>
+                            <span class="check-badge category">{{ r.category }}</span>
+                            {% if not r.passed %}
+                            <span class="issue-count">{{ r.issue_count }} issues</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="result-details" style="display:none;">
+                        {% if r.issue_count > 0 %}
+                        <p class="action-line">Action: <strong>{{ r.action_type }}</strong> | Issues: {{ r.issue_count }} / {{ r.total_checked }} ({{ r.issue_pct }}%)</p>
+                        {% endif %}
+                        <ul class="detail-list">
+                            {% for d in r.details %}
+                            <li>{{ d }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% if r.recommendation %}
+                        <div class="recommendation">{{ r.recommendation }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Recommendations Summary -->
+        {% set recs = [] %}
+        {% for r in report.results if r.recommendation %}
+            {% set _ = recs.append(r) %}
+        {% endfor %}
+        {% if recs %}
+        <div class="card">
+            <h3>Recommendations</h3>
+            <div class="rec-list">
+                {% for r in recs %}
+                <div class="rec-item">
+                    <span class="check-badge {{ r.severity }}">{{ r.severity }}</span>
+                    <span class="rec-name">{{ r.check_name.replace('_', ' ').title() }}:</span>
+                    <span class="rec-text">{{ r.recommendation }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Flagged Records Table -->
+        {% if report.flagged_records %}
+        <div class="card">
+            <h3>Flagged Records <span class="count-badge">{{ report.flagged_records | length }}</span></h3>
+            <div class="table-controls">
+                <input type="text" id="flagSearch" placeholder="Search flagged records..." class="search-input" onkeyup="filterTable()">
+                <select id="severityFilter" onchange="filterTable()" class="filter-select">
+                    <option value="">All Severities</option>
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                </select>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table flagged-table" id="flaggedTable">
+                    <thead>
+                        <tr>
+                            <th>Severity</th>
+                            <th>Check</th>
+                            <th>Row</th>
+                            <th>Primary Key</th>
+                            <th>Column</th>
+                            <th>Value</th>
+                            <th>Expected</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in report.flagged_records %}
+                        <tr class="severity-row" data-severity="{{ f.severity }}">
+                            <td><span class="check-badge {{ f.severity }}">{{ f.severity }}</span></td>
+                            <td>{{ f.check.replace('_', ' ').title() }}</td>
+                            <td>{{ f.row_index }}</td>
+                            <td class="pk-cell">{% for k, v in f.primary_key.items() %}{{ k }}: {{ v }}{% endfor %}</td>
+                            <td>{{ f.column }}</td>
+                            <td class="{% if f.value == None or f.value == 'None' %}null-val{% endif %}">{{ f.value }}</td>
+                            <td>{{ f.expected }}</td>
+                            <td><span class="action-badge {{ f.action_type }}">{{ f.action_type }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Download Buttons -->
+        <div class="download-row">
+            <a href="/download/csv" class="btn-download">Download Flagged Records (CSV)</a>
+            <a href="/download/report" class="btn-download btn-secondary">Download Text Report</a>
+        </div>
+
+        <!-- Run History -->
+        {% if history %}
+        <div class="card">
+            <h3>Recent Run History</h3>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Run ID</th>
+                            <th>File</th>
+                            <th>Source</th>
+                            <th>Score</th>
+                            <th>Grade</th>
+                            <th>Issues</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for run in history %}
+                        <tr>
+                            <td>{{ run.run_id }}</td>
+                            <td>{{ run.file_name }}</td>
+                            <td>{{ run.data_source }}</td>
+                            <td>{{ run.overall_score }}</td>
+                            <td>{{ run.grade }}</td>
+                            <td>{{ run.total_issues }}</td>
+                            <td>{{ run.run_timestamp[:19] }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Data Quality Monitor - Run ID #{{ report.run_id }} - {{ report.execution_time_sec }}s execution</p>
+        </footer>
+    </div>
+
+    <script>
+        function toggleDetails(el) {
+            const details = el.querySelector('.result-details');
+            details.style.display = details.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function filterTable() {
+            const search = document.getElementById('flagSearch').value.toLowerCase();
+            const severity = document.getElementById('severityFilter').value;
+            const rows = document.querySelectorAll('#flaggedTable tbody tr');
+
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                const rowSeverity = row.getAttribute('data-severity');
+                const matchSearch = text.includes(search);
+                const matchSeverity = !severity || rowSeverity === severity;
+                row.style.display = (matchSearch && matchSeverity) ? '' : 'none';
+            });
+        }
+    </script>
+</body>
+</html>

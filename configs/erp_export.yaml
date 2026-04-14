@@ -1,0 +1,16 @@
+data_source: "erp_export"
+description: "Procurement purchase orders from ERP system"
+primary_key: "po_number"
+context_columns: ["po_number", "supplier", "part_number", "qty_ordered", "plant"]
+
+checks:
+  enabled: []
+  disabled: []
+
+ranges:
+  quantity: [0, 50000]
+  price: [0, 100000]
+
+thresholds:
+  max_missing_pct: 5.0
+  max_duplicate_pct: 1.0

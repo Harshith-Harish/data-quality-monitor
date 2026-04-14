@@ -1,0 +1,18 @@
+data_source: "factory_iot"
+description: "IoT sensor readings from factory floor"
+primary_key: "sensor_id"
+context_columns: ["sensor_id", "location", "temperature", "humidity", "status"]
+
+checks:
+  enabled: []
+  disabled: []
+
+ranges:
+  temperature: [-50, 150]
+  humidity: [0, 100]
+  pressure: [900, 1100]
+  battery_pct: [0, 100]
+
+thresholds:
+  max_missing_pct: 3.0
+  max_duplicate_pct: 0.5
