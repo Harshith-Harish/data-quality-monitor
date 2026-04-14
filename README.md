@@ -4,15 +4,15 @@ A scalable, class-based Python framework that automates data quality checks on a
 
 ## The Problem This Solves
 
-Bad data gets into production systems and nobody catches it until something breaks — a report goes out with wrong numbers, a dashboard shows impossible values, an ML model trains on corrupted data. Manual quality checks don't scale when you have dozens of data sources refreshing daily.
+Bad data gets into production systems and nobody catches it until something breaks - a report goes out with wrong numbers, a dashboard shows impossible values, an ML model trains on corrupted data. Manual quality checks don't scale when you have dozens of data sources refreshing daily.
 
 This framework shifts data quality from reactive ("we found a bug in last month's report") to proactive ("data quality is trending down, let's investigate before it affects anything"). It runs automated checks on any dataset, scores the quality, tells you exactly which rows have problems and what to do about them, and tracks trends over time.
 
 ## Migration Story
 
-This started as a single flat Python script (`check_quality.py`) with standalone functions, a global `lines` list for output, and hardcoded validation rules. It worked for small files but had no scalability — adding a new check meant modifying the main flow, there was no way to configure rules per data source, no historical tracking, and no way to tell which specific rows had problems.
+This started as a single flat Python script (`check_quality.py`) with standalone functions, a global `lines` list for output, and hardcoded validation rules. It worked for small files but had no scalability - adding a new check meant modifying the main flow, there was no way to configure rules per data source, no historical tracking, and no way to tell which specific rows had problems.
 
-The class-based refactor was driven by real interview feedback: "it should be scalable and use classes." The result is an architecture where the engine never changes regardless of what's added — new checks, new storage backends, ML pipeline, API layer, containerization all plug in through the existing interfaces.
+The class-based refactor was driven by real interview feedback: "it should be scalable and use classes." The result is an architecture where the engine never changes regardless of what's added - new checks, new storage backends, ML pipeline, API layer, containerization all plug in through the existing interfaces.
 
 ## Architecture
 
@@ -60,10 +60,10 @@ data_quality/
 
 ## Design Patterns
 
-- **Strategy Pattern**: Each check is a pluggable strategy — inherits `BaseCheck`, implements `execute()`, returns a standardized `CheckResult`. Adding a new check never requires modifying the engine.
+- **Strategy Pattern**: Each check is a pluggable strategy - inherits `BaseCheck`, implements `execute()`, returns a standardized `CheckResult`. Adding a new check never requires modifying the engine.
 - **Registry Pattern**: `CheckRegistry` auto-discovers all built-in checks on initialization. Custom checks register with one line at runtime.
 - **Template Method**: `BaseCheck._make_result()` standardizes result construction across all checks.
-- **Open/Closed Principle**: The framework is open for extension (new checks, new storage backends, new consumers) and closed for modification — the engine never changes.
+- **Open/Closed Principle**: The framework is open for extension (new checks, new storage backends, new consumers) and closed for modification - the engine never changes.
 - **Config-Driven**: YAML configs per data source define custom ranges, enable/disable checks, and set thresholds without touching Python code.
 
 ## Setup
@@ -113,7 +113,7 @@ python main.py --history -f hr_system.csv
 # generate historical data for Power BI (runs from data_gen/ subfolder)
 python data_gen/generate_history.py --clean --start 2025-11-01 --end 2026-04-21 --runs 40
 
-# then run your own file — both use the same database
+# then run your own file - both use the same database
 python main.py your_data.csv -v --export-csv
 ```
 
@@ -132,11 +132,11 @@ python app.py
 # http://127.0.0.1:5000
 ```
 
-**Upload Page** — Drag-and-drop file upload, config selection (upload your own YAML / select from dropdown / use defaults), and checkboxes to select which checks to run.
+**Upload Page** - Drag-and-drop file upload, config selection (upload your own YAML / select from dropdown / use defaults), and checkboxes to select which checks to run.
 
-**Results Dashboard** — KPI cards (score, grade, rows, issues, flagged count), score gauge, quality dimension bars, data preview table, expandable check results with severity badges, searchable/filterable flagged records table, recommendations summary, download buttons for CSV and text report, and run history.
+**Results Dashboard** - KPI cards (score, grade, rows, issues, flagged count), score gauge, quality dimension bars, data preview table, expandable check results with severity badges, searchable/filterable flagged records table, recommendations summary, download buttons for CSV and text report, and run history.
 
-The web UI calls the same `engine.run()` as the CLI — no separate logic, no code duplication. Results go to the same SQLite database.
+The web UI calls the same `engine.run()` as the CLI - no separate logic, no code duplication. Results go to the same SQLite database.
 
 ## What the Report Shows
 
@@ -145,12 +145,12 @@ The report is designed to be actionable, not just informational:
 - **Data Preview**: First 5 rows so you see what you're working with
 - **Primary Key Detection**: Auto-detects the primary key column (first unique ID column) for row-level references, overridable via config
 - **Automatic Datetime Detection**: Converts string columns to datetime before any checks run, so profiling and timestamp checks see correct types
-- **Severity-Ordered Results**: Critical issues first, passes last — you see what matters immediately
+- **Severity-Ordered Results**: Critical issues first, passes last - you see what matters immediately
 - **Row-Level Flagging**: Tells you exactly which records have problems, referenced by primary key with surrounding context
-- **Deviation Scores**: How far off-range values are from normal (in standard deviations) — feeds ML later
+- **Deviation Scores**: How far off-range values are from normal (in standard deviations) - feeds ML later
 - **Actionable Recommendations**: Each failing check suggests what to do (fix, review, delete, investigate)
 - **Recommendations Summary**: Priority-ordered list at the bottom of the report
-- **CSV Export**: Export all flagged records as a spreadsheet to share with your team — each run creates a timestamped file in `flagged_records/`
+- **CSV Export**: Export all flagged records as a spreadsheet to share with your team - each run creates a timestamped file in `flagged_records/`
 
 Example verbose output:
 ```
@@ -177,8 +177,8 @@ Action: fix
 | negative_values    | validity      | medium   | review       | Negative numbers in numeric columns  |
 | range_validation   | validity      | high     | fix          | Values outside expected ranges       |
 | timestamp_check    | consistency   | medium   | investigate  | Date ordering, future dates, gaps    |
-| statistics         | profiling     | low      | —            | Min, max, mean, std per column       |
-| data_types         | profiling     | low      | —            | Column dtype reporting               |
+| statistics         | profiling     | low      | -            | Min, max, mean, std per column       |
+| data_types         | profiling     | low      | -            | Column dtype reporting               |
 
 All 8 actionable checks (everything except statistics and data_types) produce row-level flagged records with primary key references, context columns, and deviation scores.
 
@@ -206,14 +206,14 @@ class EmailFormatCheck(BaseCheck):
             action_type="fix",
         )
 
-# Register it — engine picks it up automatically
+# Register it - engine picks it up automatically
 engine = QualityEngine()
 engine.register_custom_check(EmailFormatCheck)
 ```
 
 ## Config-Driven Rules
 
-Create a YAML file in `configs/` for each data source — no code changes needed:
+Create a YAML file in `configs/` for each data source - no code changes needed:
 
 ```yaml
 data_source: "sales_data"
@@ -237,9 +237,9 @@ thresholds:
 
 ## Database Schema (SQLite)
 
-All data is stored in `db/quality_results.db` with 4 tables. The schema is designed for Power BI consumption as a star schema — `runs` is the central fact table, the other three provide detail.
+All data is stored in `db/quality_results.db` with 4 tables. The schema is designed for Power BI consumption as a star schema - `runs` is the central fact table, the other three provide detail.
 
-### runs (fact table — one row per execution)
+### runs (fact table - one row per execution)
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -270,7 +270,7 @@ All data is stored in `db/quality_results.db` with 4 tables. The schema is desig
 | recommendation | TEXT | Actionable recommendation text |
 | action_type | TEXT | fix, review, delete, investigate |
 
-### flagged_records (row-level detail — for drill-through and ML)
+### flagged_records (row-level detail - for drill-through and ML)
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -290,7 +290,7 @@ All data is stored in `db/quality_results.db` with 4 tables. The schema is desig
 
 Capped at 100 flagged records per check per run to prevent database bloat on large datasets.
 
-### column_profiles (structured stats per column — for ML training)
+### column_profiles (structured stats per column - for ML training)
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -318,19 +318,19 @@ runs.run_id  ──→  column_profiles.run_id  (1:many)
 ## Data Classes
 
 ```
-CheckResult              — Standardized output from every check
-├── flagged_records      — List of FlaggedRecord (row-level detail)
-├── recommendation       — What to do about the issues
-└── action_type          — fix / review / delete / investigate
+CheckResult              - Standardized output from every check
+├── flagged_records      - List of FlaggedRecord (row-level detail)
+├── recommendation       - What to do about the issues
+└── action_type          - fix / review / delete / investigate
 
-FlaggedRecord            — A single problematic row
-├── primary_key          — {"employee_id": "E008"}
-├── context              — Surrounding column values for reference
-└── deviation            — Std deviations from mean (for ML)
+FlaggedRecord            - A single problematic row
+├── primary_key          - {"employee_id": "E008"}
+├── context              - Surrounding column values for reference
+└── deviation            - Std deviations from mean (for ML)
 
-ColumnProfile            — Structured stats per column per run
-├── mean, std, min, max  — For numeric columns
-└── top_values           — For categorical columns
+ColumnProfile            - Structured stats per column per run
+├── mean, std, min, max  - For numeric columns
+└── top_values           - For categorical columns
 ```
 
 ## KPI Scoring
@@ -377,15 +377,15 @@ Creates 4 data sources with all 8 actionable checks triggering issues:
 Quality naturally improves over time (noise decreases from ~25% to ~10%) to show realistic trends in dashboards.
 
 Output files:
-- `db/quality_results.db` — All 4 tables populated with historical data
-- `flagged_records/` — CSV exports when using `--export-csv` with `main.py`
-- `reports/` — Text reports when using `--save-report` with `main.py`
+- `db/quality_results.db` - All 4 tables populated with historical data
+- `flagged_records/` - CSV exports when using `--export-csv` with `main.py`
+- `reports/` - Text reports when using `--save-report` with `main.py`
 
 ## Power BI Connection
 
 Power BI can't connect to SQLite natively. Two options:
 
-### Option 1: Python Script (recommended — live refresh)
+### Option 1: Python Script (recommended - live refresh)
 
 In Power BI, go to Get Data → Python script. Create 4 separate data sources, one per table. Paste this for each (change the table name):
 
@@ -408,7 +408,7 @@ Then in Model view, create relationships:
 - `runs.run_id` → `flagged_records.run_id`
 - `runs.run_id` → `column_profiles.run_id`
 
-Click Refresh anytime to pull latest data — no manual export needed.
+Click Refresh anytime to pull latest data - no manual export needed.
 
 See `data_gen/powerbi_scripts.py` for all 4 scripts ready to paste.
 
@@ -426,21 +426,21 @@ Four sample files in `samples/` with intentional quality issues across all check
 
 | File | Format | Rows | Description |
 |------|--------|------|-------------|
-| hr_system.csv | CSV | 15 | Employee data — missing names, negative salary, duplicate, future date |
-| factory_sensors.xlsx | Excel | 15 | IoT sensors — extreme temperatures, missing readings, duplicate sensor |
-| erp_export.json | JSON | 12 | Procurement — missing supplier, negative quantity, empty description |
-| customer_data.xlsx | Excel | 14 | CRM — missing emails, impossible age, empty strings, future dates |
+| hr_system.csv | CSV | 15 | Employee data - missing names, negative salary, duplicate, future date |
+| factory_sensors.xlsx | Excel | 15 | IoT sensors - extreme temperatures, missing readings, duplicate sensor |
+| erp_export.json | JSON | 12 | Procurement - missing supplier, negative quantity, empty description |
+| customer_data.xlsx | Excel | 14 | CRM - missing emails, impossible age, empty strings, future dates |
 
 ## Challenges Faced & How They Were Overcome
 
 ### 1. NumPy Types Stored as Binary in SQLite
 **Problem**: NumPy integers (`np.int64`) and floats (`np.float64`) were getting stored as raw binary bytes (`b'\x07\x00\x00...'`) in SQLite instead of proper numbers. The `total_issues` column in Power BI showed garbled data.
-**Root cause**: SQLite's Python adapter doesn't automatically convert NumPy types — it only recognizes native Python `int` and `float`.
+**Root cause**: SQLite's Python adapter doesn't automatically convert NumPy types - it only recognizes native Python `int` and `float`.
 **Fix**: Explicitly cast every numeric value with `int()` and `float()` before INSERT in both `result_store.py` (for issue_count, total_checked, issue_pct) and `engine.py` (for total_issues). Also wrapped all return values in `scorer.py` with `float(round(...))` and `int(...)`.
 **Lesson**: When using pandas/numpy with SQLite, always convert to native Python types before database operations.
 
 ### 2. Empty Strings Lost During CSV Round-Trip
-**Problem**: The history generator saves DataFrames to temp files and reloads them through the engine. When using CSV, empty strings (`""`) became `NaN` on reload — so the `EmptyStringsCheck` never found any issues in historical data.
+**Problem**: The history generator saves DataFrames to temp files and reloads them through the engine. When using CSV, empty strings (`""`) became `NaN` on reload - so the `EmptyStringsCheck` never found any issues in historical data.
 **Root cause**: `pd.read_csv()` treats empty fields as `NaN` by default. There's a `keep_default_na=False` option, but that would also break actual null detection.
 **Fix**: Switched temp files from CSV to JSON (`df.to_json()` / `loader._load_json()`). JSON preserves the distinction between `""` (empty string) and `null` (missing value).
 **Lesson**: CSV is lossy for certain edge cases. When data fidelity matters, use a format that distinguishes between null and empty.
@@ -459,7 +459,7 @@ Four sample files in `samples/` with intentional quality issues across all check
 
 ### 5. Schema Mismatch Between Old and New Database
 **Problem**: Running a new version of the code against a database created by an older version threw `sqlite3.OperationalError: table has no column named recommendation`. The `check_results` table was created without the new `recommendation` and `action_type` columns.
-**Root cause**: `CREATE TABLE IF NOT EXISTS` doesn't alter existing tables — if the table already exists with the old schema, it keeps the old columns.
+**Root cause**: `CREATE TABLE IF NOT EXISTS` doesn't alter existing tables - if the table already exists with the old schema, it keeps the old columns.
 **Fix**: Delete the old database and regenerate. Added the `--clean` flag to `generate_history.py` for this purpose.
 **Future fix**: Phase 6 would add schema migration/versioning so the database upgrades automatically.
 
@@ -472,8 +472,8 @@ Four sample files in `samples/` with intentional quality issues across all check
 **Fix**: Added a database UPDATE in `generate_history.py` to set the `file_name` to a clean name (`hr_system.json`) after each run.
 
 ### 8. ID Column False Positives
-**Problem**: Columns like `humidity` contain "id" in some datasets (e.g. `humidity` doesn't, but `inspector_id` does — and inspectors legitimately handle multiple orders). The `DuplicateIDCheck` flagged `inspector_id` as having duplicate values when duplicates are expected for non-primary-key ID columns.
-**Current state**: This is a known limitation. The check flags any column with "id" in the name. The config-driven approach partially mitigates this — you can set `primary_key` in the YAML config to clarify which column is the actual primary key. A future improvement would be to only check the configured primary key column, or use a regex pattern like `(^id$|^id_|_id$)` for stricter matching.
+**Problem**: Columns like `humidity` contain "id" in some datasets (e.g. `humidity` doesn't, but `inspector_id` does - and inspectors legitimately handle multiple orders). The `DuplicateIDCheck` flagged `inspector_id` as having duplicate values when duplicates are expected for non-primary-key ID columns.
+**Current state**: This is a known limitation. The check flags any column with "id" in the name. The config-driven approach partially mitigates this - you can set `primary_key` in the YAML config to clarify which column is the actual primary key. A future improvement would be to only check the configured primary key column, or use a regex pattern like `(^id$|^id_|_id$)` for stricter matching.
 
 ## Current Limitations
 
@@ -481,7 +481,7 @@ Four sample files in `samples/` with intentional quality issues across all check
 - **No native datetime type**: Timestamps are stored as ISO format TEXT strings. Sorting and filtering work correctly because ISO format is alphabetically chronological, and Power BI auto-converts to datetime on import. Moving to PostgreSQL (Phase 5) would give proper TIMESTAMP columns.
 - **No schema migration**: If the database schema changes (new columns added), the old database must be deleted and regenerated. No automatic ALTER TABLE or version tracking yet.
 - **Single-file database**: SQLite uses a single file with file-level locking. Fine for single-user development and Power BI dashboards, but won't work for concurrent multi-user access. PostgreSQL (Phase 5) would solve this.
-- **No concurrent writes**: If two processes try to write to the database simultaneously, one will fail. The parallel check execution is safe because checks only read the DataFrame — only the final store step writes to the database.
+- **No concurrent writes**: If two processes try to write to the database simultaneously, one will fail. The parallel check execution is safe because checks only read the DataFrame - only the final store step writes to the database.
 
 ### Check Limitations
 - **ID column detection is broad**: Any column with "id" in the name gets checked for uniqueness. Columns like `inspector_id` or `department_id` that are foreign keys (not primary keys) get false positive duplicate warnings.
@@ -503,16 +503,16 @@ Four sample files in `samples/` with intentional quality issues across all check
 
 ## Troubleshooting
 
-**`ModuleNotFoundError: No module named 'engine'`** — Run commands from the project root directory (`data_quality/`), not from inside a subfolder.
+**`ModuleNotFoundError: No module named 'engine'`** - Run commands from the project root directory (`data_quality/`), not from inside a subfolder.
 
-**`sqlite3.OperationalError: table has no column named...`** — The database was created by an older version with a different schema. Delete and regenerate:
+**`sqlite3.OperationalError: table has no column named...`** - The database was created by an older version with a different schema. Delete and regenerate:
 ```bash
 rm db/quality_results.db              # Linux/Mac
 del db\quality_results.db             # Windows
 python data_gen/generate_history.py --clean --start 2025-11-01 --end 2026-04-21 --runs 30
 ```
 
-**Stale bytecode after updating files** — Clear cached Python bytecode:
+**Stale bytecode after updating files** - Clear cached Python bytecode:
 ```bash
 rm -rf __pycache__/ checks/__pycache__/ data_gen/__pycache__/    # Linux/Mac
 # Or prevent it permanently:
@@ -520,27 +520,27 @@ export PYTHONDONTWRITEBYTECODE=1      # Linux/Mac
 set PYTHONDONTWRITEBYTECODE=1         # Windows
 ```
 
-**Power BI "no such table" error** — Database was created with old schema. Delete `db/quality_results.db` and regenerate history.
+**Power BI "no such table" error** - Database was created with old schema. Delete `db/quality_results.db` and regenerate history.
 
-**Garbled data (binary bytes) in Power BI columns** — NumPy types weren't cast to Python types. Update to latest `engine.py`, `scorer.py`, and `result_store.py`, then regenerate the database.
+**Garbled data (binary bytes) in Power BI columns** - NumPy types weren't cast to Python types. Update to latest `engine.py`, `scorer.py`, and `result_store.py`, then regenerate the database.
 
-**Empty strings check never finds issues** — If using CSV temp files, empty strings get converted to NaN on reload. Ensure `generate_history.py` uses JSON temp files (`.to_json()` not `.to_csv()`).
+**Empty strings check never finds issues** - If using CSV temp files, empty strings get converted to NaN on reload. Ensure `generate_history.py` uses JSON temp files (`.to_json()` not `.to_csv()`).
 
 ## Scalability Features
 
-- **Parallel Execution**: Checks run concurrently via `ThreadPoolExecutor` — scales with CPU cores
+- **Parallel Execution**: Checks run concurrently via `ThreadPoolExecutor` - scales with CPU cores
 - **Config-Driven**: New data sources need only a YAML file, not code changes
 - **Plugin Architecture**: Custom checks register at runtime without modifying the core engine
 - **Auto Primary Key Detection**: Finds the best identifier column automatically, overridable via config
 - **Automatic Datetime Detection**: Converts string columns to datetime once after loading, before any checks run
-- **Row-Level Flagging with Cap**: Captures up to 100 flagged records per check — detailed enough for root cause analysis, capped to prevent database bloat on large datasets
-- **Database Logging**: Every run persisted to SQLite across 4 tables — runs, results, flagged records, column profiles
+- **Row-Level Flagging with Cap**: Captures up to 100 flagged records per check - detailed enough for root cause analysis, capped to prevent database bloat on large datasets
+- **Database Logging**: Every run persisted to SQLite across 4 tables - runs, results, flagged records, column profiles
 - **CSV Export**: Flagged records exportable as timestamped spreadsheets (per run) for team collaboration
 - **Power BI Ready**: Schema designed as star schema (fact + dimension tables) with direct Python script connection
 
 ## Roadmap
 
-### Phase 1 — Core Framework ✅
+### Phase 1 - Core Framework ✅
 - [x] Class-based architecture (Strategy Pattern)
 - [x] 10 quality checks with row-level flagging
 - [x] Actionable recommendations per check
@@ -556,7 +556,7 @@ set PYTHONDONTWRITEBYTECODE=1         # Windows
 - [x] Data preview in reports
 - [x] Power BI connection scripts
 
-### Phase 2 — Web UI ✅
+### Phase 2 - Web UI ✅
 - [x] Flask web application (`app.py`)
 - [x] File upload with drag-and-drop
 - [x] Config selection (upload custom / select existing / use defaults)
@@ -569,20 +569,20 @@ set PYTHONDONTWRITEBYTECODE=1         # Windows
 - [x] Run history section
 - [x] Clean minimal blue/white design
 
-### Phase 3 — ML Pipeline
+### Phase 3 - ML Pipeline
 - [ ] Anomaly detection check (learns "normal" from column_profiles history)
 - [ ] Score trend forecasting (predicts future quality drops)
 - [ ] Training script reads from SQLite (column_profiles + flagged_records as features)
 - [ ] Models stored in `models/` folder, loaded at runtime by ML check classes
-- [ ] ML checks are just new BaseCheck subclasses — engine untouched
+- [ ] ML checks are just new BaseCheck subclasses - engine untouched
 
-### Phase 4 — API Layer
+### Phase 4 - API Layer
 - [ ] FastAPI wrapping `engine.run()`
 - [ ] Endpoints: `/check`, `/history`, `/flagged`, `/profiles`
 - [ ] ML model serving through same API
 - [ ] Returns report dict as JSON
 
-### Phase 5 — Containerization, Database & CI/CD
+### Phase 5 - Containerization, Database & CI/CD
 - [ ] `.gitignore` and `requirements.txt` for GitHub
 - [ ] GitHub Actions CI/CD pipeline (lint with ruff, run checks against sample datasets, Docker build on merge)
 - [ ] Dockerfile + docker-compose
@@ -591,7 +591,7 @@ set PYTHONDONTWRITEBYTECODE=1         # Windows
 - [ ] Environment-based config (dev = SQLite, prod = Postgres)
 - [ ] Configurable database section in YAML config (user chooses sqlite or postgres with connection details)
 
-### Phase 6 — Production Features
+### Phase 6 - Production Features
 - [ ] Schema drift detection (column added/removed between runs)
 - [ ] Categorical value validation (status should only be "active"/"inactive"/etc.)
 - [ ] Alerting service (Slack/email on score drops)
