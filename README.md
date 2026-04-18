@@ -540,7 +540,7 @@ set PYTHONDONTWRITEBYTECODE=1         # Windows
 
 ## Roadmap
 
-### Phase 1 - Core Framework ✅
+### Phase 1 - Core Framework 
 - [x] Class-based architecture (Strategy Pattern)
 - [x] 10 quality checks with row-level flagging
 - [x] Actionable recommendations per check
@@ -556,7 +556,7 @@ set PYTHONDONTWRITEBYTECODE=1         # Windows
 - [x] Data preview in reports
 - [x] Power BI connection scripts
 
-### Phase 2 - Web UI ✅
+### Phase 2 - Web UI 
 - [x] Flask web application (`app.py`)
 - [x] File upload with drag-and-drop
 - [x] Config selection (upload custom / select existing / use defaults)
