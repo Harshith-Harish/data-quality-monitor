@@ -8,3 +8,6 @@ powerbi_export/
 data_gen/power_bi_script.py
 .env
 *.pbix
+models/
+CLAUDE.md
+.claude/

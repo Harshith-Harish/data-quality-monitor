@@ -6,6 +6,7 @@
 import pandas as pd
 import numpy as np
 from .base_check import BaseCheck, FlaggedRecord
+from ml.anomaly import build_feature_vector, load_anomaly_bundle, predict_column_anomaly
 
 MAX_FLAGS = 100  # cap per check to prevent database bloat
 
@@ -51,6 +52,21 @@ def _deviation(value, mean, std):
     if std and std > 0 and value is not None and not pd.isna(value):
         return round(abs(value - mean) / std, 2)
     return None
+
+
+def _numeric_column_stats(df, col):
+    """mean, std, null_count, unique_count, total_count for a numeric column.
+    Mirrors engine._build_column_profiles's numeric branch exactly, so anomaly
+    model features match at train time (from column_profiles) and predict time."""
+    series = df[col]
+    total_count = len(series)
+    null_count = int(series.isnull().sum())
+    unique_count = int(series.nunique())
+    if series.isnull().all():
+        return None, None, null_count, unique_count, total_count
+    mean = round(float(series.mean()), 4)
+    std = round(float(series.std()), 4)
+    return mean, std, null_count, unique_count, total_count
 
 
 def _flag_rows(df, mask, col, pk_col, context_cols, rule, expected, severity, action_type, existing_flags, col_mean=None, col_std=None):
@@ -425,3 +441,57 @@ class DataTypesCheck(BaseCheck):
     def execute(self, df, pk_col=None, context_cols=None):
         details = [f"{col}: {df[col].dtype}" for col in df.columns]
         return self._make_result(passed=True, issue_count=0, total_checked=len(df.columns), details=details)
+
+
+class AnomalyDetectionCheck(BaseCheck):
+    name = "anomaly_detection"
+    description = "Flags numeric columns whose stats drift outside historical norms (ML)"
+    category = "ml_anomaly"
+    severity = "medium"
+
+    MODELS_DIR = "models"
+    ROWS_PER_ANOMALY = 5  # most extreme rows to flag per anomalous column
+
+    def execute(self, df, pk_col=None, context_cols=None):
+        context_cols = context_cols or list(df.columns[:6])
+        data_source = self.config.get("data_source", "unknown")
+
+        bundle = load_anomaly_bundle(self.MODELS_DIR, data_source)
+        if not bundle or not bundle.get("columns"):
+            return self._make_result(
+                passed=True, issue_count=0, total_checked=0,
+                details=[f"No trained anomaly model for data source '{data_source}'. Run: python train_models.py"],
+            )
+
+        details, flagged, total_issues = [], [], 0
+        checked = 0
+
+        for col, entry in bundle["columns"].items():
+            if col not in df.columns:
+                continue
+            mean, std, null_count, unique_count, total_count = _numeric_column_stats(df, col)
+            if mean is None:
+                continue
+            checked += 1
+
+            features = build_feature_vector(mean, std, null_count, unique_count, total_count)
+            is_anomaly, score = predict_column_anomaly(entry, features)
+            if not is_anomaly:
+                continue
+
+            details.append(f"{col}: current stats (mean={mean}, std={std}) anomalous vs historical pattern (score={score:.3f})")
+            total_issues += 1
+
+            if std and std > 0:
+                deviations = (df[col] - mean).abs() / std
+                top_idx = deviations.nlargest(min(self.ROWS_PER_ANOMALY, len(df))).index
+                mask = df.index.isin(top_idx)
+                flagged += _flag_rows(df, mask, col, pk_col, context_cols, "ml_anomaly",
+                                      "within historical norm", self.severity, "review", flagged, mean, std)
+
+        if total_issues == 0:
+            details.append("No anomalies found" if checked > 0 else "No numeric columns with trained models found in this file")
+
+        rec = "Statistical anomaly vs historical pattern. Review for data drift, source system changes, or genuine outliers." if total_issues > 0 else ""
+        return self._make_result(passed=(total_issues == 0), issue_count=total_issues, total_checked=checked,
+                                 details=details, flagged_records=flagged, recommendation=rec, action_type="review")

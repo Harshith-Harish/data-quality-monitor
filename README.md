@@ -179,6 +179,7 @@ Action: fix
 | timestamp_check    | consistency   | medium   | investigate  | Date ordering, future dates, gaps    |
 | statistics         | profiling     | low      | -            | Min, max, mean, std per column       |
 | data_types         | profiling     | low      | -            | Column dtype reporting               |
+| anomaly_detection  | ml_anomaly    | medium   | review       | Column stats vs historical norms (ML)|
 
 All 8 actionable checks (everything except statistics and data_types) produce row-level flagged records with primary key references, context columns, and deviation scores.
 
@@ -381,6 +382,36 @@ Output files:
 - `flagged_records/` - CSV exports when using `--export-csv` with `main.py`
 - `reports/` - Text reports when using `--save-report` with `main.py`
 
+## ML Pipeline
+
+Two ML-backed features build on the historical data in `db/quality_results.db`:
+
+- **Anomaly detection** (`anomaly_detection` check): an `IsolationForest` per numeric column per data source, trained on that column's historical `mean`/`std`/null-rate/uniqueness from `column_profiles`. Flags columns whose current-run stats look statistically abnormal vs their own history, and highlights the most extreme rows in that column.
+- **Score trend forecasting**: a linear fit of `overall_score` over run sequence per data source, used to predict the next few runs' scores and label the trend (improving/stable/declining).
+
+Both need models trained first (requires at least 10 historical runs per data source/column - use `data_gen/generate_history.py` to build that history):
+
+```bash
+# train anomaly + forecast models for every data source found in the database
+python train_models.py
+
+# train just one data source
+python train_models.py --data-source hr_system
+```
+
+Trained models are saved to `models/*.joblib` (gitignored - regenerate anytime by rerunning `train_models.py`). Once trained:
+
+```bash
+# anomaly_detection now runs automatically as part of every check
+python main.py samples/hr_system.csv -c configs/hr_system.yaml -v
+
+# see the score forecast per data source
+python main.py --history --forecast
+python main.py --history --forecast -f hr_system.csv
+```
+
+If no model has been trained yet for a data source, both the check and `--forecast` report that plainly instead of failing.
+
 ## Power BI Connection
 
 Power BI can't connect to SQLite natively. Two options:
@@ -569,12 +600,12 @@ set PYTHONDONTWRITEBYTECODE=1         # Windows
 - [x] Run history section
 - [x] Clean minimal blue/white design
 
-### Phase 3 - ML Pipeline
-- [ ] Anomaly detection check (learns "normal" from column_profiles history)
-- [ ] Score trend forecasting (predicts future quality drops)
-- [ ] Training script reads from SQLite (column_profiles + flagged_records as features)
-- [ ] Models stored in `models/` folder, loaded at runtime by ML check classes
-- [ ] ML checks are just new BaseCheck subclasses - engine untouched
+### Phase 3 - ML Pipeline ✅
+- [x] Anomaly detection check (learns "normal" from column_profiles history)
+- [x] Score trend forecasting (predicts future quality drops)
+- [x] Training script reads from SQLite (column_profiles + flagged_records as features)
+- [x] Models stored in `models/` folder, loaded at runtime by ML check classes
+- [x] ML checks are just new BaseCheck subclasses - engine untouched
 
 ### Phase 4 - API Layer
 - [ ] FastAPI wrapping `engine.run()`

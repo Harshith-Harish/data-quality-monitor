@@ -224,6 +224,62 @@ class ResultStore:
         conn.close()
         return rows
 
+    def list_data_sources(self) -> list[str]:
+        # Distinct data sources that have at least one run, for ML training.
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT DISTINCT data_source FROM runs WHERE data_source IS NOT NULL ORDER BY data_source"
+        )
+        sources = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return sources
+
+    def get_column_profile_history(self, data_source: str) -> list[dict]:
+        # Historical column_profiles rows for a data source, joined to runs for timestamp ordering.
+        # Feeds anomaly model training (ml/anomaly.py).
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT cp.column_name, cp.dtype, cp.total_count, cp.null_count,
+                   cp.unique_count, cp.mean, cp.std, r.run_timestamp
+            FROM column_profiles cp
+            JOIN runs r ON cp.run_id = r.run_id
+            WHERE r.data_source = ?
+            ORDER BY r.run_timestamp
+        """, (data_source,))
+
+        columns = [desc[0] for desc in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        conn.close()
+        return rows
+
+    def get_score_history(self, data_source: str) -> list[dict]:
+        # Chronological overall_score series for a data source. Feeds forecast training (ml/forecast.py).
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT run_timestamp, overall_score FROM runs WHERE data_source = ? ORDER BY run_timestamp",
+            (data_source,),
+        )
+        columns = [desc[0] for desc in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        conn.close()
+        return rows
+
+    def get_data_source_for_file(self, file_name: str) -> Optional[str]:
+        # Most recent run's data_source for a given file name, so CLI history can resolve
+        # a -f filter to the data_source key models are trained/keyed on.
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT data_source FROM runs WHERE file_name = ? ORDER BY run_timestamp DESC LIMIT 1",
+            (file_name,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+
     def get_trend_data(self, file_name: str, check_name: Optional[str] = None) -> list[dict]:
         # Get trend data for a specific file (and optionally a specific check).
         #Designed for Power BI time-series charts.

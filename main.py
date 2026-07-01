@@ -1,20 +1,10 @@
-'''
-Data Quality Monitor - CLI Entry Point
-Usage:
-    python main.py <filepath> # run with defaults
-    python main.py <filepath> -c configs/custom.yaml  # run with config
-    python main.py <filepath> --no-parallel # sequential execution
-    python main.py --history # show run history
-    python main.py --history -f sample.csv # history for one file
-Works with ANY tabular data file: CSV, Excel (.xlsx/.xls), JSON
-'''
-
 import sys
 import os
 import argparse
 
 from engine import QualityEngine
 from report_generator import ReportGenerator
+from ml.forecast import load_forecast_bundle, predict_next, trend_label
 
 
 def main():
@@ -28,6 +18,8 @@ Examples:
   python main.py users.json --no-parallel
   python main.py --history
   python main.py --history -f sample.csv
+  python main.py --history --forecast
+  python main.py --history --forecast -f sample.csv
         """,
     )
 
@@ -39,6 +31,7 @@ Examples:
     parser.add_argument("--export-csv", action="store_true", help="Export flagged records to CSV")
     parser.add_argument("--history", action="store_true", help="Show run history")
     parser.add_argument("-f", "--file-filter", help="Filter history by file name")
+    parser.add_argument("--forecast", action="store_true", help="Show ML score forecast per data source (use with --history)")
     parser.add_argument("--workers", type=int, default=4, help="Max parallel workers (default: 4)")
 
     args = parser.parse_args()
@@ -67,6 +60,27 @@ Examples:
                 f"{run['run_timestamp']}"
             )
         print()
+
+        if args.forecast:
+            if args.file_filter:
+                data_source = engine.store.get_data_source_for_file(args.file_filter)
+                sources = [data_source] if data_source else []
+            else:
+                sources = engine.store.list_data_sources()
+
+            print(f"{'='*70}")
+            print("SCORE FORECAST")
+            print(f"{'='*70}")
+            for data_source in sources:
+                bundle = load_forecast_bundle("models", data_source)
+                if not bundle:
+                    print(f"  {data_source}: no trained forecast model. Run: python train_models.py")
+                    continue
+                trend = trend_label(bundle["slope"])
+                future = predict_next(bundle, n_ahead=3)
+                print(f"  {data_source}: last score {bundle['last_score']:.2f} | trend: {trend} | next 3 runs: {future}")
+            print()
+
         return
 
     # Quality check mode - run checks on the provided file

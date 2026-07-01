@@ -11,8 +11,9 @@ from .all_checks import (
     TimestampCheck,
     StatisticsCheck,
     DataTypesCheck,
+    AnomalyDetectionCheck,
 )
- 
+
 
 class CheckRegistry:
     BUILT_IN_CHECKS = [
@@ -26,6 +27,7 @@ class CheckRegistry:
         TimestampCheck,
         StatisticsCheck,
         DataTypesCheck,
+        AnomalyDetectionCheck,
     ]
 
     def __init__(self):
