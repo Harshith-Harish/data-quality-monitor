@@ -22,44 +22,51 @@ The class-based refactor was driven by real interview feedback: "it should be sc
 
 ```
 data_quality/
-├── main.py                 # CLI entry point
-├── app.py                  # Flask web UI
-├── engine.py               # Orchestrator (pipeline coordination)
-├── loader.py               # File loading (CSV, Excel, JSON)
-├── config_manager.py       # YAML config loader (per-data-source rules)
-├── scorer.py               # KPI computation (weighted score + grade)
-├── result_store.py         # SQLite persistence (4 tables)
-├── report_generator.py     # Formatted reports with recommendations
+├── main.py                    # CLI entry point
+├── app.py                     # Flask web UI
+├── engine.py                  # Orchestrator (pipeline coordination) - never changes
+├── loader.py                  # File loading (CSV, Excel, JSON)
+├── config_manager.py          # YAML config loader (per-data-source rules)
+├── scorer.py                  # KPI computation (weighted score + grade)
+├── result_store.py            # SQLite persistence (4-table star schema)
+├── report_generator.py        # Formatted reports with recommendations
+├── train_models.py            # Trains anomaly detection + score forecast models
 ├── __init__.py
 ├── checks/
 │   ├── __init__.py
-│   ├── base_check.py       # ABC + CheckResult + FlaggedRecord + ColumnProfile
-│   ├── all_checks.py       # 10 concrete check implementations
-│   └── registry.py         # Auto-discovery + registration of checks
+│   ├── base_check.py          # ABC + CheckResult + FlaggedRecord + ColumnProfile
+│   ├── all_checks.py          # 11 concrete check implementations
+│   └── registry.py            # Auto-discovery + registration of checks
+├── ml/
+│   ├── anomaly.py             # IsolationForest per-column anomaly detection
+│   └── forecast.py            # Linear score trend forecasting
+├── models/                    # Trained .joblib bundles (gitignored, regenerable)
 ├── templates/
-│   ├── upload.html         # Upload page (drag-drop, config, check selection)
-│   └── results.html        # Results dashboard (gauge, cards, flagged table)
+│   ├── upload.html            # Upload page (drag-drop, config, check selection)
+│   └── results.html           # Results dashboard (gauge, forecast chart, flagged table)
 ├── static/
-│   └── style.css           # Clean minimal blue/white stylesheet
+│   └── style.css              # Clean minimal blue/white stylesheet
 ├── configs/
 │   ├── hr_system.yaml
 │   ├── factory_iot.yaml
 │   ├── erp_export.yaml
 │   └── customer_data.yaml
 ├── data_gen/
-│   ├── generate_history.py # Historical data generator (configurable dates)
+│   ├── generate_history.py    # Historical data generator (configurable dates)
 │   ├── export_for_powerbi.py  # CSV export for Power BI
-│   └── powerbi_scripts.py  # Python scripts to paste into Power BI
-├── samples/                # Sample data files for testing
+│   └── powerbi_scripts.py     # Python scripts to paste into Power BI
+├── samples/                   # Sample data files for testing
 │   ├── hr_system.csv
 │   ├── factory_sensors.xlsx
 │   ├── erp_export.json
 │   └── customer_data.xlsx
+├── assets/
+│   └── demo.gif                # Demo recording
 ├── db/
-│   └── quality_results.db  # SQLite database (auto-created)
-├── uploads/                # Temporary uploaded files (auto-created)
-├── reports/                # Saved text reports (auto-created)
-└── flagged_records/        # Exported flagged record CSVs (auto-created)
+│   └── quality_results.db      # SQLite database (auto-created)
+├── uploads/                    # Temporary uploaded files (auto-created)
+├── reports/                    # Saved text reports (auto-created)
+└── flagged_records/            # Exported flagged record CSVs (auto-created)
 ```
 
 ## Design Patterns
