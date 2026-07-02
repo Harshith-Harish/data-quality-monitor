@@ -73,17 +73,34 @@ class QualityEngine:
 
         # load config if provided
         config = self.config_manager.load(config_path)
-        data_source = config.get("data_source", file_name)
+        # config always carries SOME data_source (explicit YAML value, or the
+        # "unknown" sentinel from ConfigManager defaults) — .get()'s fallback
+        # never fires because the key always exists. Fall back to the file's
+        # stem (no extension) when no config gave us a real name, so uploads
+        # without a matching YAML config still get a usable, ML-lookup-able
+        # data_source instead of the literal string "unknown".
+        config_data_source = config.get("data_source")
+        if not config_data_source or config_data_source == "unknown":
+            data_source = os.path.splitext(file_name)[0]
+        else:
+            data_source = config_data_source
+        # write the resolved value back so every check instantiated below
+        # (e.g. AnomalyDetectionCheck, which reads self.config["data_source"]
+        # to pick which trained model to load) sees the same resolved name —
+        # not the raw "unknown" sentinel from ConfigManager defaults.
+        config["data_source"] = data_source
 
         if "weights" in config:
             self.scorer = KPIScorer(weights=config["weights"])
 
         # figure out which column is the PK
         pk_col = self._detect_primary_key(df, config)
-        context_cols = config.get("context_columns", list(df.columns[:6])) #defaults to the first 6 columns 
+        context_cols = config.get(
+            "context_columns", list(df.columns[:6])
+        )  # defaults to the first 6 columns
 
         # profile columns for ML later
-        profiles = self._build_column_profiles(df) 
+        profiles = self._build_column_profiles(df)
 
         # which checks to run
         checks = self._resolve_checks(config)
@@ -119,19 +136,21 @@ class QualityEngine:
         all_flagged = []
         for r in results:
             for f in r.flagged_records:
-                all_flagged.append({
-                    "check": r.check_name,
-                    "row_index": f.row_index,
-                    "primary_key": f.primary_key,
-                    "column": f.column,
-                    "value": f.value,
-                    "rule": f.rule,
-                    "expected": f.expected,
-                    "severity": f.severity,
-                    "action_type": f.action_type,
-                    "context": f.context,
-                    "deviation": f.deviation,
-                })
+                all_flagged.append(
+                    {
+                        "check": r.check_name,
+                        "row_index": f.row_index,
+                        "primary_key": f.primary_key,
+                        "column": f.column,
+                        "value": f.value,
+                        "rule": f.rule,
+                        "expected": f.expected,
+                        "severity": f.severity,
+                        "action_type": f.action_type,
+                        "context": f.context,
+                        "deviation": f.deviation,
+                    }
+                )
 
         # # build the report dict
         report = {
@@ -194,21 +213,20 @@ class QualityEngine:
         if enabled:
             # only run explicitly enabled checks
             check_classes = {
-                name: cls for name, cls in all_checks.items()
-                if name in enabled
+                name: cls for name, cls in all_checks.items() if name in enabled
             }
         else:
             # run all except disabled
             check_classes = {
-                name: cls for name, cls in all_checks.items()
-                if name not in disabled
+                name: cls for name, cls in all_checks.items() if name not in disabled
             }
 
         # instantiate with config (so checks like RangeValidation get custom ranges)
         return [cls(config=config) for cls in check_classes.values()]
 
-    def _run_sequential(self, checks: list[BaseCheck], df: pd.DataFrame,
-                         pk_col=None, context_cols=None) -> list[CheckResult]:
+    def _run_sequential(
+        self, checks: list[BaseCheck], df: pd.DataFrame, pk_col=None, context_cols=None
+    ) -> list[CheckResult]:
         """Sequential execution - easier to debug."""
         results = []
         for check in checks:
@@ -216,25 +234,30 @@ class QualityEngine:
                 result = check.execute(df, pk_col=pk_col, context_cols=context_cols)
                 results.append(result)
             except Exception as e:
-                results.append(CheckResult(
-                    check_name=check.name,
-                    passed=False,
-                    issue_count=0,
-                    total_checked=0,
-                    details=[f"CHECK ERROR: {str(e)}"],
-                    severity="critical",
-                    category=check.category,
-                ))
+                results.append(
+                    CheckResult(
+                        check_name=check.name,
+                        passed=False,
+                        issue_count=0,
+                        total_checked=0,
+                        details=[f"CHECK ERROR: {str(e)}"],
+                        severity="critical",
+                        category=check.category,
+                    )
+                )
         return results
 
-    def _run_parallel(self, checks: list[BaseCheck], df: pd.DataFrame,
-                       pk_col=None, context_cols=None) -> list[CheckResult]:
+    def _run_parallel(
+        self, checks: list[BaseCheck], df: pd.DataFrame, pk_col=None, context_cols=None
+    ) -> list[CheckResult]:
         """Parallel execution - each check gets its own thread."""
         results = []
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_check = {
-                executor.submit(self._safe_execute, check, df, pk_col, context_cols): check
+                executor.submit(
+                    self._safe_execute, check, df, pk_col, context_cols
+                ): check
                 for check in checks
             }
 
@@ -244,21 +267,24 @@ class QualityEngine:
                     result = future.result()
                     results.append(result)
                 except Exception as e:
-                    results.append(CheckResult(
-                        check_name=check.name,
-                        passed=False,
-                        issue_count=0,
-                        total_checked=0,
-                        details=[f"PARALLEL EXECUTION ERROR: {str(e)}"],
-                        severity="critical",
-                        category=check.category,
-                    ))
+                    results.append(
+                        CheckResult(
+                            check_name=check.name,
+                            passed=False,
+                            issue_count=0,
+                            total_checked=0,
+                            details=[f"PARALLEL EXECUTION ERROR: {str(e)}"],
+                            severity="critical",
+                            category=check.category,
+                        )
+                    )
 
         results.sort(key=lambda r: r.check_name)
         return results
 
-    def _safe_execute(self, check: BaseCheck, df: pd.DataFrame,
-                       pk_col=None, context_cols=None) -> CheckResult:
+    def _safe_execute(
+        self, check: BaseCheck, df: pd.DataFrame, pk_col=None, context_cols=None
+    ) -> CheckResult:
         """Safe wrapper for threading."""
         return check.execute(df, pk_col=pk_col, context_cols=context_cols)
 
@@ -291,7 +317,8 @@ class QualityEngine:
     def _detect_primary_key(self, df: pd.DataFrame, config: dict) -> Optional[str]:
         """Find the best PK column. Config wins, then auto-detect by pattern + uniqueness."""
         import re
-        ID_PATTERN = r'(^id$|^id_|_id$|_id_|_id\d)'
+
+        ID_PATTERN = r"(^id$|^id_|_id$|_id_|_id\d)"
 
         # config takes priority
         if config.get("primary_key"):
@@ -312,6 +339,7 @@ class QualityEngine:
     def _build_column_profiles(self, df: pd.DataFrame) -> list:
         """Column-level stats for profiling and ML features."""
         import numpy as np
+
         profiles = []
         for col in df.columns:
             profile = ColumnProfile(
@@ -323,13 +351,27 @@ class QualityEngine:
             )
 
             if df[col].dtype in ["int64", "float64"]:
-                profile.mean = round(float(df[col].mean()), 4) if not df[col].isnull().all() else None
-                profile.std = round(float(df[col].std()), 4) if not df[col].isnull().all() else None
-                profile.min_val = float(df[col].min()) if not df[col].isnull().all() else None
-                profile.max_val = float(df[col].max()) if not df[col].isnull().all() else None
+                profile.mean = (
+                    round(float(df[col].mean()), 4)
+                    if not df[col].isnull().all()
+                    else None
+                )
+                profile.std = (
+                    round(float(df[col].std()), 4)
+                    if not df[col].isnull().all()
+                    else None
+                )
+                profile.min_val = (
+                    float(df[col].min()) if not df[col].isnull().all() else None
+                )
+                profile.max_val = (
+                    float(df[col].max()) if not df[col].isnull().all() else None
+                )
             elif df[col].dtype in ["object", "string"]:
                 top = df[col].value_counts().head(5).to_dict()
-                profile.top_values = [{"value": k, "count": int(v)} for k, v in top.items()]
+                profile.top_values = [
+                    {"value": k, "count": int(v)} for k, v in top.items()
+                ]
 
             profiles.append(profile)
         return profiles
@@ -343,12 +385,12 @@ class QualityEngine:
         os.makedirs(output_dir, exist_ok=True)
 
         from datetime import datetime as dt
+
         timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
         run_id = report.get("run_id", 0)
         file_name = report.get("file_name", "unknown").replace(".", "_")
         output_path = os.path.join(
-            output_dir,
-            f"flagged_run{run_id}_{file_name}_{timestamp}.csv"
+            output_dir, f"flagged_run{run_id}_{file_name}_{timestamp}.csv"
         )
 
         rows = []

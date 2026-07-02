@@ -17,6 +17,8 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from engine import QualityEngine
 from report_generator import ReportGenerator
+from result_store import ResultStore
+from ml.forecast import load_forecast_bundle, predict_next, trend_label
 
 app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = os.path.join(PROJECT_ROOT, "uploads")
@@ -46,11 +48,74 @@ def get_available_configs():
 def get_available_checks():
     """Get list of all registered checks with metadata."""
     from checks.registry import CheckRegistry
+
     registry = CheckRegistry()
     return registry.list_checks()
 
 
+def build_forecast_chart_data(data_source, n_ahead=3):
+    """
+    Build a Chart.js-ready payload combining historical scores with a
+    forecasted continuation, for one data source.
+
+    Returns None if there's no trained forecast model yet (not enough
+    history) — the template handles that by showing a "not enough data"
+    message instead of an empty chart.
+    """
+    if not data_source or data_source == "unknown":
+        return None
+
+    store = ResultStore()
+    history = store.get_score_history(data_source)
+    bundle = load_forecast_bundle("models", data_source)
+
+    if not bundle:
+        return {
+            "available": False,
+            "n_runs": len(history),
+            "min_required": 10,
+        }
+
+    predicted_scores = predict_next(bundle, n_ahead=n_ahead)
+    trend = trend_label(bundle["slope"])
+
+    # Multiple runs can land on the same calendar day (e.g. repeated manual
+    # testing). The forecast MODEL is still trained on full history in
+    # train_models.py — this dedup is display-only, so the chart reads as
+    # one point per day instead of stacking dozens of same-day dots.
+    # history is chronologically ordered, so "last one wins" keeps the most
+    # recent run for any day that had multiple.
+    daily = {}
+    for h in history:
+        day = h["run_timestamp"][:10]
+        daily[day] = h["overall_score"]
+
+    actual_labels = list(daily.keys())
+    actual_scores = list(daily.values())
+    forecast_labels = [f"+{i}" for i in range(1, n_ahead + 1)]
+
+    # Chart.js draws one continuous line per dataset. To show a dashed
+    # "future" segment connected to the solid "actual" line, the forecast
+    # dataset starts with nulls for every actual point except the last
+    # (so the two lines visually connect) then carries the predicted values.
+    forecast_series = (
+        [None] * (len(actual_scores) - 1) + [actual_scores[-1]] + predicted_scores
+    )
+
+    return {
+        "available": True,
+        "labels": actual_labels + forecast_labels,
+        "actual": actual_scores + [None] * n_ahead,
+        "forecast": forecast_series,
+        "trend": trend,
+        "slope": round(bundle["slope"], 3),
+        "n_runs": bundle["n_runs"],
+        "predicted_scores": predicted_scores,
+    }
+
+
 # ---- Routes ----
+
 
 @app.route("/")
 def upload_page():
@@ -84,7 +149,9 @@ def run_check():
     if "config_file" in request.files:
         config_file = request.files["config_file"]
         if config_file.filename != "":
-            config_path = os.path.join(app.config["UPLOAD_FOLDER"], "custom_config.yaml")
+            config_path = os.path.join(
+                app.config["UPLOAD_FOLDER"], "custom_config.yaml"
+            )
             config_file.save(config_path)
 
     # if no custom config, check dropdown selection
@@ -156,14 +223,22 @@ def results_page():
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     report["results"] = sorted(
         report["results"],
-        key=lambda r: (str(r["passed"]) == "True" or r["passed"] is True, severity_order.get(r["severity"], 99))
+        key=lambda r: (
+            str(r["passed"]) == "True" or r["passed"] is True,
+            severity_order.get(r["severity"], 99),
+        ),
     )
 
     # get run history for the history section
     engine = QualityEngine()
     history = engine.get_history(limit=20)
 
-    return render_template("results.html", report=report, history=history)
+    # ML score forecast for this data source (None-safe — handled in template)
+    forecast = build_forecast_chart_data(report.get("data_source"))
+
+    return render_template(
+        "results.html", report=report, history=history, forecast=forecast
+    )
 
 
 @app.route("/download/<file_type>")
@@ -172,12 +247,16 @@ def download_file(file_type):
     if file_type == "csv":
         # find latest flagged records file
         folder = os.path.join(PROJECT_ROOT, "flagged_records")
-        files = sorted(os.listdir(folder), reverse=True) if os.path.exists(folder) else []
+        files = (
+            sorted(os.listdir(folder), reverse=True) if os.path.exists(folder) else []
+        )
         if files:
             return send_file(os.path.join(folder, files[0]), as_attachment=True)
     elif file_type == "report":
         folder = os.path.join(PROJECT_ROOT, "reports")
-        files = sorted(os.listdir(folder), reverse=True) if os.path.exists(folder) else []
+        files = (
+            sorted(os.listdir(folder), reverse=True) if os.path.exists(folder) else []
+        )
         if files:
             return send_file(os.path.join(folder, files[0]), as_attachment=True)
 

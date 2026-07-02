@@ -2,6 +2,10 @@
 
 A scalable, class-based Python framework that automates data quality checks on any tabular dataset, identifies exactly which records have problems, provides actionable recommendations, logs everything to a database for trend tracking, and feeds into Power BI dashboards for data governance visibility.
 
+## Demo
+
+![Data Quality Monitor Demo](assets/demo.gif)
+
 ## The Problem This Solves
 
 Bad data gets into production systems and nobody catches it until something breaks - a report goes out with wrong numbers, a dashboard shows impossible values, an ML model trains on corrupted data. Manual quality checks don't scale when you have dozens of data sources refreshing daily.
@@ -134,9 +138,9 @@ python app.py
 
 **Upload Page** - Drag-and-drop file upload, config selection (upload your own YAML / select from dropdown / use defaults), and checkboxes to select which checks to run.
 
-**Results Dashboard** - KPI cards (score, grade, rows, issues, flagged count), score gauge, quality dimension bars, data preview table, expandable check results with severity badges, searchable/filterable flagged records table, recommendations summary, download buttons for CSV and text report, and run history.
+**Results Dashboard** - KPI cards (score, grade, rows, issues, flagged count), score gauge, quality dimension bars, an ML-powered **score forecast chart** (historical scores plotted solid, predicted next 3 runs plotted as a dashed continuation, with a trend badge - improving/stable/declining), data preview table, expandable check results with severity badges (the ML-backed `anomaly_detection` check carries a distinct **ML badge** so it reads apart from the 10 rule-based checks at a glance), searchable/filterable flagged records table, recommendations summary, download buttons for CSV and text report, and run history.
 
-The web UI calls the same `engine.run()` as the CLI - no separate logic, no code duplication. Results go to the same SQLite database.
+The web UI calls the same `engine.run()` as the CLI - no separate logic, no code duplication. Results go to the same SQLite database, and the forecast chart reads from the same `models/*.joblib` bundles the CLI's `--forecast` flag uses.
 
 ## What the Report Shows
 
@@ -153,6 +157,7 @@ The report is designed to be actionable, not just informational:
 - **CSV Export**: Export all flagged records as a spreadsheet to share with your team - each run creates a timestamped file in `flagged_records/`
 
 Example verbose output:
+
 ```
 [FAIL] RANGE_VALIDATION (validity | high)
 Issues: 4 / 45 (8.89%)
@@ -167,19 +172,19 @@ Action: fix
 
 ## Checks Included
 
-| Check              | Category      | Severity | Action Type  | Description                          |
-|-------------------|---------------|----------|-------------|--------------------------------------|
-| missing_values     | completeness  | high     | fix          | Null/missing values per column       |
-| duplicate_rows     | uniqueness    | high     | delete       | Fully duplicated rows                |
-| duplicate_ids      | uniqueness    | critical | investigate  | Duplicate values in ID columns       |
-| empty_strings      | completeness  | medium   | fix          | Empty strings in text columns        |
-| whitespace_issues  | consistency   | low      | fix          | Leading/trailing spaces              |
-| negative_values    | validity      | medium   | review       | Negative numbers in numeric columns  |
-| range_validation   | validity      | high     | fix          | Values outside expected ranges       |
-| timestamp_check    | consistency   | medium   | investigate  | Date ordering, future dates, gaps    |
-| statistics         | profiling     | low      | -            | Min, max, mean, std per column       |
-| data_types         | profiling     | low      | -            | Column dtype reporting               |
-| anomaly_detection  | ml_anomaly    | medium   | review       | Column stats vs historical norms (ML)|
+| Check             | Category     | Severity | Action Type | Description                           |
+| ----------------- | ------------ | -------- | ----------- | ------------------------------------- |
+| missing_values    | completeness | high     | fix         | Null/missing values per column        |
+| duplicate_rows    | uniqueness   | high     | delete      | Fully duplicated rows                 |
+| duplicate_ids     | uniqueness   | critical | investigate | Duplicate values in ID columns        |
+| empty_strings     | completeness | medium   | fix         | Empty strings in text columns         |
+| whitespace_issues | consistency  | low      | fix         | Leading/trailing spaces               |
+| negative_values   | validity     | medium   | review      | Negative numbers in numeric columns   |
+| range_validation  | validity     | high     | fix         | Values outside expected ranges        |
+| timestamp_check   | consistency  | medium   | investigate | Date ordering, future dates, gaps     |
+| statistics        | profiling    | low      | -           | Min, max, mean, std per column        |
+| data_types        | profiling    | low      | -           | Column dtype reporting                |
+| anomaly_detection | ml_anomaly   | medium   | review      | Column stats vs historical norms (ML) |
 
 All 8 actionable checks (everything except statistics and data_types) produce row-level flagged records with primary key references, context columns, and deviation scores.
 
@@ -222,7 +227,7 @@ primary_key: "order_id"
 context_columns: ["order_id", "customer", "amount", "date"]
 
 checks:
-  enabled: []       # empty = run all
+  enabled: [] # empty = run all
   disabled:
     - statistics
 
@@ -242,71 +247,71 @@ All data is stored in `db/quality_results.db` with 4 tables. The schema is desig
 
 ### runs (fact table - one row per execution)
 
-| Column | Type | Description |
-|--------|------|-------------|
-| run_id | INTEGER PK | Auto-incrementing run identifier |
-| file_name | TEXT | Source file name |
-| data_source | TEXT | Data source identifier from config |
-| run_timestamp | TEXT | ISO format datetime of the run |
-| row_count | INTEGER | Number of rows in the dataset |
-| column_count | INTEGER | Number of columns |
-| overall_score | REAL | Weighted quality score (0-100) |
-| grade | TEXT | Letter grade: A (Excellent) through F (Critical) |
-| total_issues | INTEGER | Count of failing checks |
+| Column        | Type       | Description                                      |
+| ------------- | ---------- | ------------------------------------------------ |
+| run_id        | INTEGER PK | Auto-incrementing run identifier                 |
+| file_name     | TEXT       | Source file name                                 |
+| data_source   | TEXT       | Data source identifier from config               |
+| run_timestamp | TEXT       | ISO format datetime of the run                   |
+| row_count     | INTEGER    | Number of rows in the dataset                    |
+| column_count  | INTEGER    | Number of columns                                |
+| overall_score | REAL       | Weighted quality score (0-100)                   |
+| grade         | TEXT       | Letter grade: A (Excellent) through F (Critical) |
+| total_issues  | INTEGER    | Count of failing checks                          |
 
 ### check_results (one row per check per run)
 
-| Column | Type | Description |
-|--------|------|-------------|
-| result_id | INTEGER PK | Auto-incrementing |
-| run_id | INTEGER FK | Links to runs.run_id |
-| check_name | TEXT | Name of the check (e.g. missing_values) |
-| category | TEXT | completeness, uniqueness, validity, consistency, profiling |
-| severity | TEXT | critical, high, medium, low |
-| passed | INTEGER | 1 = passed, 0 = failed |
-| issue_count | INTEGER | Number of issues found |
-| total_checked | INTEGER | Number of items checked |
-| issue_pct | REAL | Percentage of items with issues |
-| details | TEXT | JSON array of detail strings |
-| recommendation | TEXT | Actionable recommendation text |
-| action_type | TEXT | fix, review, delete, investigate |
+| Column         | Type       | Description                                                |
+| -------------- | ---------- | ---------------------------------------------------------- |
+| result_id      | INTEGER PK | Auto-incrementing                                          |
+| run_id         | INTEGER FK | Links to runs.run_id                                       |
+| check_name     | TEXT       | Name of the check (e.g. missing_values)                    |
+| category       | TEXT       | completeness, uniqueness, validity, consistency, profiling |
+| severity       | TEXT       | critical, high, medium, low                                |
+| passed         | INTEGER    | 1 = passed, 0 = failed                                     |
+| issue_count    | INTEGER    | Number of issues found                                     |
+| total_checked  | INTEGER    | Number of items checked                                    |
+| issue_pct      | REAL       | Percentage of items with issues                            |
+| details        | TEXT       | JSON array of detail strings                               |
+| recommendation | TEXT       | Actionable recommendation text                             |
+| action_type    | TEXT       | fix, review, delete, investigate                           |
 
 ### flagged_records (row-level detail - for drill-through and ML)
 
-| Column | Type | Description |
-|--------|------|-------------|
-| flag_id | INTEGER PK | Auto-incrementing |
-| run_id | INTEGER FK | Links to runs.run_id |
-| check_name | TEXT | Which check flagged this record |
-| row_index | INTEGER | Row number in the original dataset |
-| primary_key | TEXT | JSON dict of PK column and value |
-| column_name | TEXT | Which column has the issue |
-| value | TEXT | The actual problematic value |
-| rule | TEXT | What rule was violated (e.g. below_min, missing, duplicate_id) |
-| expected | TEXT | What the value should have been (e.g. ">= 0", "not null") |
-| severity | TEXT | critical, high, medium, low |
-| action_type | TEXT | fix, review, delete, investigate |
-| context | TEXT | JSON dict of surrounding column values for reference |
-| deviation | REAL | Standard deviations from mean (for ML features) |
+| Column      | Type       | Description                                                    |
+| ----------- | ---------- | -------------------------------------------------------------- |
+| flag_id     | INTEGER PK | Auto-incrementing                                              |
+| run_id      | INTEGER FK | Links to runs.run_id                                           |
+| check_name  | TEXT       | Which check flagged this record                                |
+| row_index   | INTEGER    | Row number in the original dataset                             |
+| primary_key | TEXT       | JSON dict of PK column and value                               |
+| column_name | TEXT       | Which column has the issue                                     |
+| value       | TEXT       | The actual problematic value                                   |
+| rule        | TEXT       | What rule was violated (e.g. below_min, missing, duplicate_id) |
+| expected    | TEXT       | What the value should have been (e.g. ">= 0", "not null")      |
+| severity    | TEXT       | critical, high, medium, low                                    |
+| action_type | TEXT       | fix, review, delete, investigate                               |
+| context     | TEXT       | JSON dict of surrounding column values for reference           |
+| deviation   | REAL       | Standard deviations from mean (for ML features)                |
 
 Capped at 100 flagged records per check per run to prevent database bloat on large datasets.
 
 ### column_profiles (structured stats per column - for ML training)
 
-| Column | Type | Description |
-|--------|------|-------------|
-| profile_id | INTEGER PK | Auto-incrementing |
-| run_id | INTEGER FK | Links to runs.run_id |
-| column_name | TEXT | Column name |
-| dtype | TEXT | Data type (str, int64, float64, datetime64) |
-| total_count | INTEGER | Total rows |
-| null_count | INTEGER | Null/missing count |
-| unique_count | INTEGER | Distinct values |
-| mean | REAL | Mean (numeric columns only) |
-| std | REAL | Standard deviation (numeric columns only) |
-| min_val | REAL | Minimum value (numeric columns only) |
-| max_val | REAL | Maximum value (numeric columns only) |
-| top_values | TEXT | JSON array of top 5 most frequent values (text columns only) |
+| Column       | Type       | Description                                                  |
+| ------------ | ---------- | ------------------------------------------------------------ |
+| profile_id   | INTEGER PK | Auto-incrementing                                            |
+| run_id       | INTEGER FK | Links to runs.run_id                                         |
+| column_name  | TEXT       | Column name                                                  |
+| dtype        | TEXT       | Data type (str, int64, float64, datetime64)                  |
+| total_count  | INTEGER    | Total rows                                                   |
+| null_count   | INTEGER    | Null/missing count                                           |
+| unique_count | INTEGER    | Distinct values                                              |
+| mean         | REAL       | Mean (numeric columns only)                                  |
+| std          | REAL       | Standard deviation (numeric columns only)                    |
+| min_val      | REAL       | Minimum value (numeric columns only)                         |
+| max_val      | REAL       | Maximum value (numeric columns only)                         |
+| top_values   | TEXT       | JSON array of top 5 most frequent values (text columns only) |
 
 ### Relationships
 
@@ -336,13 +341,13 @@ ColumnProfile            - Structured stats per column per run
 
 ## KPI Scoring
 
-| Dimension      | Weight | Source                            |
-|---------------|--------|-----------------------------------|
-| Completeness   | 30%    | Missing values ratio              |
-| Uniqueness     | 20%    | Duplicate row ratio               |
-| ID Uniqueness  | 20%    | Duplicate ID ratio                |
-| Validity       | 20%    | Negative values + range issues    |
-| Consistency    | 10%    | Whitespace + empty string issues  |
+| Dimension     | Weight | Source                           |
+| ------------- | ------ | -------------------------------- |
+| Completeness  | 30%    | Missing values ratio             |
+| Uniqueness    | 20%    | Duplicate row ratio              |
+| ID Uniqueness | 20%    | Duplicate ID ratio               |
+| Validity      | 20%    | Negative values + range issues   |
+| Consistency   | 10%    | Whitespace + empty string issues |
 
 Grades: A (≥95), B (≥85), C (≥75), D (≥60), F (<60)
 
@@ -368,16 +373,17 @@ python data_gen/generate_history.py --start 2026-03-01 --end 2026-04-21 --runs 1
 
 Creates 4 data sources with all 8 actionable checks triggering issues:
 
-| Source | Data Type | Key Issues |
-|--------|-----------|------------|
-| hr_system | Employee records | Missing names, negative salary/age, ratings > 5, whitespace, empty strings, future hire dates, duplicates |
-| factory_iot | Sensor readings | Out-of-range temperature/humidity, missing readings, negative pressure, empty strings, future timestamps, duplicates |
-| erp_export | Procurement orders | Missing suppliers, negative quantities/totals, empty descriptions, whitespace, future order dates, duplicates |
-| customer_data | CRM records | Missing names/emails, impossible ages, negative balances, empty strings, whitespace, future dates, duplicates |
+| Source        | Data Type          | Key Issues                                                                                                           |
+| ------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| hr_system     | Employee records   | Missing names, negative salary/age, ratings > 5, whitespace, empty strings, future hire dates, duplicates            |
+| factory_iot   | Sensor readings    | Out-of-range temperature/humidity, missing readings, negative pressure, empty strings, future timestamps, duplicates |
+| erp_export    | Procurement orders | Missing suppliers, negative quantities/totals, empty descriptions, whitespace, future order dates, duplicates        |
+| customer_data | CRM records        | Missing names/emails, impossible ages, negative balances, empty strings, whitespace, future dates, duplicates        |
 
 Quality naturally improves over time (noise decreases from ~25% to ~10%) to show realistic trends in dashboards.
 
 Output files:
+
 - `db/quality_results.db` - All 4 tables populated with historical data
 - `flagged_records/` - CSV exports when using `--export-csv` with `main.py`
 - `reports/` - Text reports when using `--save-report` with `main.py`
@@ -412,6 +418,8 @@ python main.py --history --forecast -f hr_system.csv
 
 If no model has been trained yet for a data source, both the check and `--forecast` report that plainly instead of failing.
 
+**In the web UI**, both ML features are visible, not just CLI text: the results dashboard renders the score forecast as an interactive Chart.js line chart (solid historical line, dashed predicted continuation, trend badge), and the `anomaly_detection` check carries a small "ML" badge in the check list so it's visually distinct from the 10 rule-based checks. Both draw on the same `models/*.joblib` bundles and `ResultStore` methods the CLI uses - `app.py` adds a `build_forecast_chart_data()` helper that shapes `get_score_history()` + `load_forecast_bundle()` into a chart-ready payload, nothing in `engine.py` changes.
+
 ## Power BI Connection
 
 Power BI can't connect to SQLite natively. Two options:
@@ -435,6 +443,7 @@ conn.close()
 Repeat for `check_results`, `flagged_records`, and `column_profiles` (just change the table name and DataFrame variable name).
 
 Then in Model view, create relationships:
+
 - `runs.run_id` → `check_results.run_id`
 - `runs.run_id` → `flagged_records.run_id`
 - `runs.run_id` → `column_profiles.run_id`
@@ -455,66 +464,83 @@ Exports all 4 tables as CSV files to `powerbi_export/` folder. Import these into
 
 Four sample files in `samples/` with intentional quality issues across all check types:
 
-| File | Format | Rows | Description |
-|------|--------|------|-------------|
-| hr_system.csv | CSV | 15 | Employee data - missing names, negative salary, duplicate, future date |
-| factory_sensors.xlsx | Excel | 15 | IoT sensors - extreme temperatures, missing readings, duplicate sensor |
-| erp_export.json | JSON | 12 | Procurement - missing supplier, negative quantity, empty description |
-| customer_data.xlsx | Excel | 14 | CRM - missing emails, impossible age, empty strings, future dates |
+| File                 | Format | Rows | Description                                                            |
+| -------------------- | ------ | ---- | ---------------------------------------------------------------------- |
+| hr_system.csv        | CSV    | 15   | Employee data - missing names, negative salary, duplicate, future date |
+| factory_sensors.xlsx | Excel  | 15   | IoT sensors - extreme temperatures, missing readings, duplicate sensor |
+| erp_export.json      | JSON   | 12   | Procurement - missing supplier, negative quantity, empty description   |
+| customer_data.xlsx   | Excel  | 14   | CRM - missing emails, impossible age, empty strings, future dates      |
 
 ## Challenges Faced & How They Were Overcome
 
 ### 1. NumPy Types Stored as Binary in SQLite
+
 **Problem**: NumPy integers (`np.int64`) and floats (`np.float64`) were getting stored as raw binary bytes (`b'\x07\x00\x00...'`) in SQLite instead of proper numbers. The `total_issues` column in Power BI showed garbled data.
 **Root cause**: SQLite's Python adapter doesn't automatically convert NumPy types - it only recognizes native Python `int` and `float`.
 **Fix**: Explicitly cast every numeric value with `int()` and `float()` before INSERT in both `result_store.py` (for issue_count, total_checked, issue_pct) and `engine.py` (for total_issues). Also wrapped all return values in `scorer.py` with `float(round(...))` and `int(...)`.
 **Lesson**: When using pandas/numpy with SQLite, always convert to native Python types before database operations.
 
 ### 2. Empty Strings Lost During CSV Round-Trip
+
 **Problem**: The history generator saves DataFrames to temp files and reloads them through the engine. When using CSV, empty strings (`""`) became `NaN` on reload - so the `EmptyStringsCheck` never found any issues in historical data.
 **Root cause**: `pd.read_csv()` treats empty fields as `NaN` by default. There's a `keep_default_na=False` option, but that would also break actual null detection.
 **Fix**: Switched temp files from CSV to JSON (`df.to_json()` / `loader._load_json()`). JSON preserves the distinction between `""` (empty string) and `null` (missing value).
 **Lesson**: CSV is lossy for certain edge cases. When data fidelity matters, use a format that distinguishes between null and empty.
 
 ### 3. Timestamp Columns Detected as `str` Instead of `datetime64`
+
 **Problem**: The `DataTypesCheck` reported timestamp columns as `str` because datetime conversion only happened inside `TimestampCheck` on a copy of the DataFrame. Other checks and column profiles never saw the converted types.
 **Root cause**: Datetime detection was happening inside a single check instead of at the engine level.
 **Fix**: Added `_detect_datetime_columns()` to the engine, called once immediately after loading. All checks, profiling, and type reporting now see the correct `datetime64` dtype.
 **Lesson**: Data transformations that affect multiple consumers should happen at the orchestration layer, not inside individual checks.
 
 ### 4. Stale Bytecode After File Replacement
+
 **Problem**: After downloading and replacing `.py` files, Python sometimes ran the old cached `.pyc` bytecode instead of the updated source. Led to confusing bugs where code changes seemed to have no effect.
 **Root cause**: `__pycache__/` stores compiled `.pyc` files. If the replacement file has the same or older modification timestamp, Python uses the cached version.
 **Fix**: Delete `__pycache__/` folders after replacing files, or set `PYTHONDONTWRITEBYTECODE=1` to prevent caching entirely. In Docker containers, this is handled via `ENV PYTHONDONTWRITEBYTECODE=1`.
 **Lesson**: During active development with file replacements, disable bytecode caching. In containerized deployments, this is a non-issue since every build starts clean.
 
 ### 5. Schema Mismatch Between Old and New Database
+
 **Problem**: Running a new version of the code against a database created by an older version threw `sqlite3.OperationalError: table has no column named recommendation`. The `check_results` table was created without the new `recommendation` and `action_type` columns.
 **Root cause**: `CREATE TABLE IF NOT EXISTS` doesn't alter existing tables - if the table already exists with the old schema, it keeps the old columns.
 **Fix**: Delete the old database and regenerate. Added the `--clean` flag to `generate_history.py` for this purpose.
 **Future fix**: Phase 6 would add schema migration/versioning so the database upgrades automatically.
 
 ### 6. Module Import Errors from Subfolder
+
 **Problem**: `generate_history.py` moved into `data_gen/` subfolder, causing `ModuleNotFoundError: No module named 'engine'` since Python only looks in the current directory.
 **Fix**: Added `sys.path.insert(0, PROJECT_ROOT)` and `os.chdir(PROJECT_ROOT)` at the top of `generate_history.py` so it resolves imports and file paths relative to the project root regardless of where it's called from.
 
 ### 7. Temp File Names Leaking into Database
+
 **Problem**: The `file_name` column in the `runs` table showed `_temp_hr_system.csv` instead of a clean name, because the engine records whatever filename it receives.
 **Fix**: Added a database UPDATE in `generate_history.py` to set the `file_name` to a clean name (`hr_system.json`) after each run.
 
 ### 8. ID Column False Positives
+
 **Problem**: Columns like `humidity` contain "id" in some datasets (e.g. `humidity` doesn't, but `inspector_id` does - and inspectors legitimately handle multiple orders). The `DuplicateIDCheck` flagged `inspector_id` as having duplicate values when duplicates are expected for non-primary-key ID columns.
 **Current state**: This is a known limitation. The check flags any column with "id" in the name. The config-driven approach partially mitigates this - you can set `primary_key` in the YAML config to clarify which column is the actual primary key. A future improvement would be to only check the configured primary key column, or use a regex pattern like `(^id$|^id_|_id$)` for stricter matching.
+
+### 9. `data_source` Silently Resolving to "unknown" (broke ML model lookup)
+
+**Problem**: Uploading a file through the web UI without explicitly selecting a matching YAML config caused `AnomalyDetectionCheck` to always report "no trained model", even for data sources with fully trained `.joblib` bundles. The same file, run via CLI with `-c configs/hr_system.yaml`, worked fine.
+**Root cause**: `ConfigManager.DEFAULT_CONFIG` sets `data_source: "unknown"` as a literal string default. `config.get("data_source", file_name)` in `engine.py` never actually fell back to `file_name`, because Python's `dict.get(key, default)` only uses `default` when `key` is _missing_ - and `data_source` was always present (either the YAML's real value, or that "unknown" sentinel). Since ML models are trained and looked up by `data_source` (`models/{data_source}_anomaly.joblib`), every upload without an explicit config was silently keyed to a model that could never exist.
+**Fix**: Two-part. First, `engine.py` now explicitly checks for the `"unknown"` sentinel and falls back to the file's name (stem, no extension) instead - `hr_system.csv` uploaded with no config resolves to `data_source = "hr_system"`, which happens to match the trained model name for files named after their source. Second - the part that was actually still broken after the first fix - the _resolved_ `data_source` is written back into the `config` dict (`config["data_source"] = data_source`) before checks are instantiated, since `AnomalyDetectionCheck` reads `self.config["data_source"]` directly rather than anything computed later in `engine.run()`. Fixing only the local variable and not the dict left the bug half-fixed.
+**Lesson**: `dict.get(key, default)` is not a null-coalescing operator - it only helps when the key is absent, not when it's present but holds a "not really set" sentinel value. When a config object is passed by reference into multiple downstream consumers (here: every `BaseCheck` instance), a derived/corrected value needs to be written back into that shared object, not just held in a local variable, or only the caller that computed it sees the fix.
 
 ## Current Limitations
 
 ### SQLite Constraints
+
 - **No native datetime type**: Timestamps are stored as ISO format TEXT strings. Sorting and filtering work correctly because ISO format is alphabetically chronological, and Power BI auto-converts to datetime on import. Moving to PostgreSQL (Phase 5) would give proper TIMESTAMP columns.
 - **No schema migration**: If the database schema changes (new columns added), the old database must be deleted and regenerated. No automatic ALTER TABLE or version tracking yet.
 - **Single-file database**: SQLite uses a single file with file-level locking. Fine for single-user development and Power BI dashboards, but won't work for concurrent multi-user access. PostgreSQL (Phase 5) would solve this.
 - **No concurrent writes**: If two processes try to write to the database simultaneously, one will fail. The parallel check execution is safe because checks only read the DataFrame - only the final store step writes to the database.
 
 ### Check Limitations
+
 - **ID column detection is broad**: Any column with "id" in the name gets checked for uniqueness. Columns like `inspector_id` or `department_id` that are foreign keys (not primary keys) get false positive duplicate warnings.
 - **Range validation requires keyword matching**: Columns are matched to ranges by checking if the range key (e.g. "age", "salary") appears in the column name. A column named `average_age_group` would match the "age" range, which may not be intended.
 - **No cross-column validation**: Checks operate on individual columns. Rules like "if status is 'delivered' then delivery_date should not be null" aren't supported yet.
@@ -522,11 +548,13 @@ Four sample files in `samples/` with intentional quality issues across all check
 - **No categorical validation**: There's no check for whether text columns contain only expected values (e.g. status should be "active"/"inactive"/"pending", not "actve" or "ACTIVE").
 
 ### Reporting Limitations
+
 - **Flagged records cap**: Maximum 100 flagged records per check per run. For very large datasets with thousands of issues, only the first 100 are captured. The summary counts are always accurate, but row-level detail is limited.
-- **Data preview shows raw dict**: The first 5 rows are printed as Python dict format, which isn't the cleanest display for wide datasets. The Flask UI (Phase 2) would render this as a proper table.
-- **No data preview for very wide tables**: If a dataset has 50+ columns, the preview becomes unreadable in text format.
+- **Data preview shows raw dict in CLI output only**: `main.py`'s text report prints the first 5 rows as Python dict format, which isn't the cleanest display for wide datasets. The Flask UI (`app.py`) already renders this as a proper HTML table - this limitation is CLI-only.
+- **No data preview for very wide tables**: If a dataset has 50+ columns, the CLI preview becomes unreadable in text format; the web UI table would need horizontal scroll handling for the same case.
 
 ### Architecture Limitations
+
 - **No authentication**: Anyone with access to the CLI or database file can run checks and view results. The API layer (Phase 4) would add auth.
 - **No scheduling**: Checks must be triggered manually. Airflow integration (Phase 6) would enable automated scheduled runs.
 - **No alerting**: Score drops aren't notified. The alerting service (Phase 6) would watch for threshold breaches.
@@ -537,6 +565,7 @@ Four sample files in `samples/` with intentional quality issues across all check
 **`ModuleNotFoundError: No module named 'engine'`** - Run commands from the project root directory (`data_quality/`), not from inside a subfolder.
 
 **`sqlite3.OperationalError: table has no column named...`** - The database was created by an older version with a different schema. Delete and regenerate:
+
 ```bash
 rm db/quality_results.db              # Linux/Mac
 del db\quality_results.db             # Windows
@@ -544,6 +573,7 @@ python data_gen/generate_history.py --clean --start 2025-11-01 --end 2026-04-21 
 ```
 
 **Stale bytecode after updating files** - Clear cached Python bytecode:
+
 ```bash
 rm -rf __pycache__/ checks/__pycache__/ data_gen/__pycache__/    # Linux/Mac
 # Or prevent it permanently:
@@ -571,7 +601,8 @@ set PYTHONDONTWRITEBYTECODE=1         # Windows
 
 ## Roadmap
 
-### Phase 1 - Core Framework 
+### Phase 1 - Core Framework
+
 - [x] Class-based architecture (Strategy Pattern)
 - [x] 10 quality checks with row-level flagging
 - [x] Actionable recommendations per check
@@ -587,7 +618,8 @@ set PYTHONDONTWRITEBYTECODE=1         # Windows
 - [x] Data preview in reports
 - [x] Power BI connection scripts
 
-### Phase 2 - Web UI 
+### Phase 2 - Web UI
+
 - [x] Flask web application (`app.py`)
 - [x] File upload with drag-and-drop
 - [x] Config selection (upload custom / select existing / use defaults)
@@ -599,21 +631,27 @@ set PYTHONDONTWRITEBYTECODE=1         # Windows
 - [x] Download buttons (CSV flagged records + text report)
 - [x] Run history section
 - [x] Clean minimal blue/white design
+- [x] ML score forecast chart (Chart.js, historical + dashed predicted continuation)
+- [x] ML badge distinguishing `anomaly_detection` from rule-based checks
 
 ### Phase 3 - ML Pipeline ✅
+
 - [x] Anomaly detection check (learns "normal" from column_profiles history)
 - [x] Score trend forecasting (predicts future quality drops)
 - [x] Training script reads from SQLite (column_profiles + flagged_records as features)
 - [x] Models stored in `models/` folder, loaded at runtime by ML check classes
 - [x] ML checks are just new BaseCheck subclasses - engine untouched
+- [x] Visualized in the web UI (forecast chart + ML badges), not just CLI text
 
 ### Phase 4 - API Layer
+
 - [ ] FastAPI wrapping `engine.run()`
 - [ ] Endpoints: `/check`, `/history`, `/flagged`, `/profiles`
 - [ ] ML model serving through same API
 - [ ] Returns report dict as JSON
 
 ### Phase 5 - Containerization, Database & CI/CD
+
 - [ ] `.gitignore` and `requirements.txt` for GitHub
 - [ ] GitHub Actions CI/CD pipeline (lint with ruff, run checks against sample datasets, Docker build on merge)
 - [ ] Dockerfile + docker-compose
@@ -623,6 +661,7 @@ set PYTHONDONTWRITEBYTECODE=1         # Windows
 - [ ] Configurable database section in YAML config (user chooses sqlite or postgres with connection details)
 
 ### Phase 6 - Production Features
+
 - [ ] Schema drift detection (column added/removed between runs)
 - [ ] Categorical value validation (status should only be "active"/"inactive"/etc.)
 - [ ] Alerting service (Slack/email on score drops)
