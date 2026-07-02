@@ -471,65 +471,6 @@ Four sample files in `samples/` with intentional quality issues across all check
 | erp_export.json      | JSON   | 12   | Procurement - missing supplier, negative quantity, empty description   |
 | customer_data.xlsx   | Excel  | 14   | CRM - missing emails, impossible age, empty strings, future dates      |
 
-## Challenges Faced & How They Were Overcome
-
-### 1. NumPy Types Stored as Binary in SQLite
-
-**Problem**: NumPy integers (`np.int64`) and floats (`np.float64`) were getting stored as raw binary bytes (`b'\x07\x00\x00...'`) in SQLite instead of proper numbers. The `total_issues` column in Power BI showed garbled data.
-**Root cause**: SQLite's Python adapter doesn't automatically convert NumPy types - it only recognizes native Python `int` and `float`.
-**Fix**: Explicitly cast every numeric value with `int()` and `float()` before INSERT in both `result_store.py` (for issue_count, total_checked, issue_pct) and `engine.py` (for total_issues). Also wrapped all return values in `scorer.py` with `float(round(...))` and `int(...)`.
-**Lesson**: When using pandas/numpy with SQLite, always convert to native Python types before database operations.
-
-### 2. Empty Strings Lost During CSV Round-Trip
-
-**Problem**: The history generator saves DataFrames to temp files and reloads them through the engine. When using CSV, empty strings (`""`) became `NaN` on reload - so the `EmptyStringsCheck` never found any issues in historical data.
-**Root cause**: `pd.read_csv()` treats empty fields as `NaN` by default. There's a `keep_default_na=False` option, but that would also break actual null detection.
-**Fix**: Switched temp files from CSV to JSON (`df.to_json()` / `loader._load_json()`). JSON preserves the distinction between `""` (empty string) and `null` (missing value).
-**Lesson**: CSV is lossy for certain edge cases. When data fidelity matters, use a format that distinguishes between null and empty.
-
-### 3. Timestamp Columns Detected as `str` Instead of `datetime64`
-
-**Problem**: The `DataTypesCheck` reported timestamp columns as `str` because datetime conversion only happened inside `TimestampCheck` on a copy of the DataFrame. Other checks and column profiles never saw the converted types.
-**Root cause**: Datetime detection was happening inside a single check instead of at the engine level.
-**Fix**: Added `_detect_datetime_columns()` to the engine, called once immediately after loading. All checks, profiling, and type reporting now see the correct `datetime64` dtype.
-**Lesson**: Data transformations that affect multiple consumers should happen at the orchestration layer, not inside individual checks.
-
-### 4. Stale Bytecode After File Replacement
-
-**Problem**: After downloading and replacing `.py` files, Python sometimes ran the old cached `.pyc` bytecode instead of the updated source. Led to confusing bugs where code changes seemed to have no effect.
-**Root cause**: `__pycache__/` stores compiled `.pyc` files. If the replacement file has the same or older modification timestamp, Python uses the cached version.
-**Fix**: Delete `__pycache__/` folders after replacing files, or set `PYTHONDONTWRITEBYTECODE=1` to prevent caching entirely. In Docker containers, this is handled via `ENV PYTHONDONTWRITEBYTECODE=1`.
-**Lesson**: During active development with file replacements, disable bytecode caching. In containerized deployments, this is a non-issue since every build starts clean.
-
-### 5. Schema Mismatch Between Old and New Database
-
-**Problem**: Running a new version of the code against a database created by an older version threw `sqlite3.OperationalError: table has no column named recommendation`. The `check_results` table was created without the new `recommendation` and `action_type` columns.
-**Root cause**: `CREATE TABLE IF NOT EXISTS` doesn't alter existing tables - if the table already exists with the old schema, it keeps the old columns.
-**Fix**: Delete the old database and regenerate. Added the `--clean` flag to `generate_history.py` for this purpose.
-**Future fix**: Phase 6 would add schema migration/versioning so the database upgrades automatically.
-
-### 6. Module Import Errors from Subfolder
-
-**Problem**: `generate_history.py` moved into `data_gen/` subfolder, causing `ModuleNotFoundError: No module named 'engine'` since Python only looks in the current directory.
-**Fix**: Added `sys.path.insert(0, PROJECT_ROOT)` and `os.chdir(PROJECT_ROOT)` at the top of `generate_history.py` so it resolves imports and file paths relative to the project root regardless of where it's called from.
-
-### 7. Temp File Names Leaking into Database
-
-**Problem**: The `file_name` column in the `runs` table showed `_temp_hr_system.csv` instead of a clean name, because the engine records whatever filename it receives.
-**Fix**: Added a database UPDATE in `generate_history.py` to set the `file_name` to a clean name (`hr_system.json`) after each run.
-
-### 8. ID Column False Positives
-
-**Problem**: Columns like `humidity` contain "id" in some datasets (e.g. `humidity` doesn't, but `inspector_id` does - and inspectors legitimately handle multiple orders). The `DuplicateIDCheck` flagged `inspector_id` as having duplicate values when duplicates are expected for non-primary-key ID columns.
-**Current state**: This is a known limitation. The check flags any column with "id" in the name. The config-driven approach partially mitigates this - you can set `primary_key` in the YAML config to clarify which column is the actual primary key. A future improvement would be to only check the configured primary key column, or use a regex pattern like `(^id$|^id_|_id$)` for stricter matching.
-
-### 9. `data_source` Silently Resolving to "unknown" (broke ML model lookup)
-
-**Problem**: Uploading a file through the web UI without explicitly selecting a matching YAML config caused `AnomalyDetectionCheck` to always report "no trained model", even for data sources with fully trained `.joblib` bundles. The same file, run via CLI with `-c configs/hr_system.yaml`, worked fine.
-**Root cause**: `ConfigManager.DEFAULT_CONFIG` sets `data_source: "unknown"` as a literal string default. `config.get("data_source", file_name)` in `engine.py` never actually fell back to `file_name`, because Python's `dict.get(key, default)` only uses `default` when `key` is _missing_ - and `data_source` was always present (either the YAML's real value, or that "unknown" sentinel). Since ML models are trained and looked up by `data_source` (`models/{data_source}_anomaly.joblib`), every upload without an explicit config was silently keyed to a model that could never exist.
-**Fix**: Two-part. First, `engine.py` now explicitly checks for the `"unknown"` sentinel and falls back to the file's name (stem, no extension) instead - `hr_system.csv` uploaded with no config resolves to `data_source = "hr_system"`, which happens to match the trained model name for files named after their source. Second - the part that was actually still broken after the first fix - the _resolved_ `data_source` is written back into the `config` dict (`config["data_source"] = data_source`) before checks are instantiated, since `AnomalyDetectionCheck` reads `self.config["data_source"]` directly rather than anything computed later in `engine.run()`. Fixing only the local variable and not the dict left the bug half-fixed.
-**Lesson**: `dict.get(key, default)` is not a null-coalescing operator - it only helps when the key is absent, not when it's present but holds a "not really set" sentinel value. When a config object is passed by reference into multiple downstream consumers (here: every `BaseCheck` instance), a derived/corrected value needs to be written back into that shared object, not just held in a local variable, or only the caller that computed it sees the fix.
-
 ## Current Limitations
 
 ### SQLite Constraints
@@ -559,33 +500,6 @@ Four sample files in `samples/` with intentional quality issues across all check
 - **No scheduling**: Checks must be triggered manually. Airflow integration (Phase 6) would enable automated scheduled runs.
 - **No alerting**: Score drops aren't notified. The alerting service (Phase 6) would watch for threshold breaches.
 - **Single storage backend**: Currently SQLite only. The `ResultStore` interface supports swapping to PostgreSQL, but only one backend is implemented.
-
-## Troubleshooting
-
-**`ModuleNotFoundError: No module named 'engine'`** - Run commands from the project root directory (`data_quality/`), not from inside a subfolder.
-
-**`sqlite3.OperationalError: table has no column named...`** - The database was created by an older version with a different schema. Delete and regenerate:
-
-```bash
-rm db/quality_results.db              # Linux/Mac
-del db\quality_results.db             # Windows
-python data_gen/generate_history.py --clean --start 2025-11-01 --end 2026-04-21 --runs 30
-```
-
-**Stale bytecode after updating files** - Clear cached Python bytecode:
-
-```bash
-rm -rf __pycache__/ checks/__pycache__/ data_gen/__pycache__/    # Linux/Mac
-# Or prevent it permanently:
-export PYTHONDONTWRITEBYTECODE=1      # Linux/Mac
-set PYTHONDONTWRITEBYTECODE=1         # Windows
-```
-
-**Power BI "no such table" error** - Database was created with old schema. Delete `db/quality_results.db` and regenerate history.
-
-**Garbled data (binary bytes) in Power BI columns** - NumPy types weren't cast to Python types. Update to latest `engine.py`, `scorer.py`, and `result_store.py`, then regenerate the database.
-
-**Empty strings check never finds issues** - If using CSV temp files, empty strings get converted to NaN on reload. Ensure `generate_history.py` uses JSON temp files (`.to_json()` not `.to_csv()`).
 
 ## Scalability Features
 
